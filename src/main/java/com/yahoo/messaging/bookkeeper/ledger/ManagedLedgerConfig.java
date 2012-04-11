@@ -8,7 +8,7 @@ import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import com.google.common.base.Charsets;
 
 /**
- *
+ * Configuration class for a ManagedLedger
  */
 public class ManagedLedgerConfig {
 

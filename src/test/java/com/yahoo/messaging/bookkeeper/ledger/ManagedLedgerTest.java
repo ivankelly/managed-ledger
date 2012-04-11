@@ -43,7 +43,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
             // Acknowledge only on last entry
             LedgerEntry lastEntry = entries.get(entries.size() - 1);
-            cursor.acknowledge(lastEntry);
+            cursor.markDelete(lastEntry);
 
             log.info("-----------------------");
         }

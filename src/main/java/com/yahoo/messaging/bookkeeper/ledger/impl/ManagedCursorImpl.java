@@ -69,7 +69,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * apache.bookkeeper.client.LedgerEntry)
      */
     @Override
-    public void acknowledge(LedgerEntry entry) throws Exception {
+    public void markDelete(LedgerEntry entry) throws Exception {
         checkNotNull(entry);
 
         acknowledgedPosition = new Position(entry);
