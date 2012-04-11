@@ -29,8 +29,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
-import junit.framework.TestCase;
-
 import org.apache.bookkeeper.bookie.BookieException;
 import org.apache.bookkeeper.client.BookKeeperTestClient;
 import org.apache.bookkeeper.conf.ClientConfiguration;
@@ -49,7 +47,7 @@ import org.slf4j.LoggerFactory;
 /**
  * A class runs several bookie servers for testing.
  */
-public abstract class BookKeeperClusterTestCase extends TestCase {
+public abstract class BookKeeperClusterTestCase {
 
     static final Logger LOG = LoggerFactory.getLogger(BookKeeperClusterTestCase.class);
 
@@ -69,12 +67,16 @@ public abstract class BookKeeperClusterTestCase extends TestCase {
     protected ServerConfiguration baseConf = new ServerConfiguration();
     protected ClientConfiguration baseClientConf = new ClientConfiguration();
 
+    public BookKeeperClusterTestCase() {
+        // By default start a 3 bookies cluster
+        this(3);
+    }
+    
     public BookKeeperClusterTestCase(int numBookies) {
         this.numBookies = numBookies;
     }
 
     @Before
-    @Override
     public void setUp() throws Exception {
         try {
             // start zookeeper service
@@ -88,7 +90,6 @@ public abstract class BookKeeperClusterTestCase extends TestCase {
     }
 
     @After
-    @Override
     public void tearDown() throws Exception {
         LOG.info("TearDown");
         // stop bookkeeper service
@@ -331,7 +332,7 @@ public abstract class BookKeeperClusterTestCase extends TestCase {
         while (bkc.getZkHandle().exists(
                 "/ledgers/available/" + InetAddress.getLocalHost().getHostAddress() + ":" + port,
                 false) == null) {
-            Thread.sleep(500);
+            Thread.sleep(50);
         }
 
         bkc.readBookiesBlocking();

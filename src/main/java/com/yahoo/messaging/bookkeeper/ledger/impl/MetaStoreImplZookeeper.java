@@ -1,6 +1,6 @@
-package com.yahoo.messaging.bookkeeper.vledger.impl;
+package com.yahoo.messaging.bookkeeper.ledger.impl;
 
-import static com.yahoo.messaging.bookkeeper.vledger.util.VarArgs.va;
+import static com.yahoo.messaging.bookkeeper.ledger.util.VarArgs.va;
 
 import java.nio.charset.Charset;
 import java.util.Arrays;
@@ -16,8 +16,8 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
-import com.yahoo.messaging.bookkeeper.vledger.Position;
-import com.yahoo.messaging.bookkeeper.vledger.util.Pair;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
+import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 public class MetaStoreImplZookeeper implements MetaStore {
 
@@ -41,7 +41,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.impl.MetaStore#getLedgerIds(java
+     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#getLedgerIds(java
      * .lang.String)
      */
     @Override
@@ -65,7 +65,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.impl.MetaStore#updateLedgersIds
+     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#updateLedgersIds
      * (java.lang.String, java.lang.Iterable)
      */
     @Override
@@ -89,7 +89,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.impl.MetaStore#getConsumers(java
+     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#getConsumers(java
      * .lang.String)
      */
     @Override
@@ -110,9 +110,9 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.impl.MetaStore#updateConsumer(
+     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#updateConsumer(
      * java.lang.String, java.lang.String,
-     * com.yahoo.messaging.bookkeeper.vledger.Position)
+     * com.yahoo.messaging.bookkeeper.ledger.Position)
      */
     @Override
     public void updateConsumer(String ledgerName, String consumerName, Position position)

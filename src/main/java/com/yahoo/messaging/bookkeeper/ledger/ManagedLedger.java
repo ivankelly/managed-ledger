@@ -1,4 +1,4 @@
-package com.yahoo.messaging.bookkeeper.vledger;
+package com.yahoo.messaging.bookkeeper.ledger;
 
 
 public interface ManagedLedger {

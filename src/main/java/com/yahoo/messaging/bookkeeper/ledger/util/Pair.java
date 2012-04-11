@@ -1,4 +1,4 @@
-package com.yahoo.messaging.bookkeeper.vledger.util;
+package com.yahoo.messaging.bookkeeper.ledger.util;
 
 import com.google.common.base.Objects;
 

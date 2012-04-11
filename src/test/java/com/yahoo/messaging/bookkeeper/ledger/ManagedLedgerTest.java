@@ -1,4 +1,4 @@
-package com.yahoo.messaging.bookkeeper.vledger;
+package com.yahoo.messaging.bookkeeper.ledger;
 
 import java.util.List;
 
@@ -8,32 +8,20 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class VirtualLedgerTest extends BookKeeperClusterTestCase {
+import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerFactory;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
 
-    private static Logger log = LoggerFactory.getLogger(VirtualLedgerTest.class);
+public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
-    public VirtualLedgerTest() {
-        // Create a 3 bookies cluster
-        super(1);
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
-     * @see org.apache.bookkeeper.test.BookKeeperClusterTestCase#tearDown()
-     */
-    @Override
-    public void tearDown() throws Exception {
-        log.info("Shutting down bookkeeper cluster");
-        super.tearDown();
-    }
+    private static Logger log = LoggerFactory.getLogger(ManagedLedgerTest.class);
 
     @Test
-    public void testVirtualLedgerApi() throws Exception {
+    public void managedLedgerApi() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
 
-        ManagedLedgerConfig config = new ManagedLedgerConfig().setEnsembleSize(1).setQuorumSize(1);       
-        ManagedLedger ledger = factory.open("my_test_ledger3", config);
+        ManagedLedger ledger = factory.open("my_test_ledger");
 
         ManagedCursor cursor = ledger.openCursor("c1");
 

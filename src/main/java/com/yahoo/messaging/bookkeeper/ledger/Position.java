@@ -1,4 +1,4 @@
-package com.yahoo.messaging.bookkeeper.vledger;
+package com.yahoo.messaging.bookkeeper.ledger;
 
 import static com.google.common.base.Preconditions.checkArgument;
 

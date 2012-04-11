@@ -1,7 +1,7 @@
 /**
  * 
  */
-package com.yahoo.messaging.bookkeeper.vledger;
+package com.yahoo.messaging.bookkeeper.ledger;
 
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 

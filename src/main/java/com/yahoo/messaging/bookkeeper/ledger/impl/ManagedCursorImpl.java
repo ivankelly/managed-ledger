@@ -1,7 +1,7 @@
 /**
  * 
  */
-package com.yahoo.messaging.bookkeeper.vledger.impl;
+package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -11,9 +11,9 @@ import java.util.List;
 import org.apache.bookkeeper.client.LedgerEntry;
 
 import com.google.common.base.Objects;
-import com.yahoo.messaging.bookkeeper.vledger.ManagedCursor;
-import com.yahoo.messaging.bookkeeper.vledger.Position;
-import com.yahoo.messaging.bookkeeper.vledger.util.Pair;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
+import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 /**
  */
@@ -38,7 +38,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.ManagedCursor#readEntries(int)
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#readEntries(int)
      */
     @Override
     public List<LedgerEntry> readEntries(int numberOfEntriesToRead) throws Exception {
@@ -54,7 +54,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.ManagedCursor#hasMoreEntries()
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#hasMoreEntries()
      */
     @Override
     public boolean hasMoreEntries() {
@@ -65,7 +65,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.ManagedCursor#acknowledge(org.
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#acknowledge(org.
      * apache.bookkeeper.client.LedgerEntry)
      */
     @Override

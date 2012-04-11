@@ -1,9 +1,9 @@
-package com.yahoo.messaging.bookkeeper.vledger;
+package com.yahoo.messaging.bookkeeper.ledger;
 
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.zookeeper.ZooKeeper;
 
-import com.yahoo.messaging.bookkeeper.vledger.impl.ManagedLedgerImpl;
+import com.yahoo.messaging.bookkeeper.ledger.impl.ManagedLedgerImpl;
 
 public class ManagedLedgerFactory {
 

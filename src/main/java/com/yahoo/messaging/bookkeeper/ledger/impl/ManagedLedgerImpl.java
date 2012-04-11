@@ -1,10 +1,10 @@
 /**
  * 
  */
-package com.yahoo.messaging.bookkeeper.vledger.impl;
+package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.yahoo.messaging.bookkeeper.vledger.util.VarArgs.va;
+import static com.yahoo.messaging.bookkeeper.ledger.util.VarArgs.va;
 import static java.lang.Math.min;
 
 import java.util.Enumeration;
@@ -23,11 +23,11 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import com.yahoo.messaging.bookkeeper.vledger.ManagedCursor;
-import com.yahoo.messaging.bookkeeper.vledger.ManagedLedger;
-import com.yahoo.messaging.bookkeeper.vledger.ManagedLedgerConfig;
-import com.yahoo.messaging.bookkeeper.vledger.Position;
-import com.yahoo.messaging.bookkeeper.vledger.util.Pair;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
+import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 /**
  * 
@@ -85,7 +85,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.ManagedLedger#addEntry(byte[])
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#addEntry(byte[])
      */
     public void addEntry(byte[] data) throws Exception {
         // XXX: Restricting to 50 entries per ledger
@@ -110,7 +110,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.ManagedLedger#openCursor(java.
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#openCursor(java.
      * lang.String)
      */
     @Override
@@ -139,7 +139,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.vledger.ManagedLedger#getNumberOfEntries()
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#getNumberOfEntries()
      */
     @Override
     public long getNumberOfEntries() {
@@ -150,7 +150,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see com.yahoo.messaging.bookkeeper.vledger.ManagedLedger#getTotalSize()
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#getTotalSize()
      */
     @Override
     public long getTotalSize() {
@@ -161,7 +161,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see com.yahoo.messaging.bookkeeper.vledger.ManagedLedger#close()
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#close()
      */
     @Override
     public void close() {

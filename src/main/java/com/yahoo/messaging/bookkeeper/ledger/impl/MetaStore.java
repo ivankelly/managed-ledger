@@ -1,9 +1,9 @@
-package com.yahoo.messaging.bookkeeper.vledger.impl;
+package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import java.util.List;
 
-import com.yahoo.messaging.bookkeeper.vledger.Position;
-import com.yahoo.messaging.bookkeeper.vledger.util.Pair;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
+import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 public interface MetaStore {
     List<Long> getLedgerIds(String ledgerName) throws Exception;
