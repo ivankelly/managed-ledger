@@ -5,10 +5,10 @@
 	<parent>
 		<groupId>com.yahoo.messaging</groupId>
 		<artifactId>yxms-parent</artifactId>
-		<version>0.0.1-SNAPSHOT</version>
+		<version>0.1</version>
 	</parent>
 
-	<artifactId>managed-ledger</artifactId>
+	<artifactId>managed_ledger</artifactId>
 	<name>Managed Ledger</name>
 
 	<dependencies>

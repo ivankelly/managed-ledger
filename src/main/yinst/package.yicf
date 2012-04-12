@@ -1,7 +1,8 @@
 #!/usr/local/bin/perl
 
 print <<'EOF';
-PRODUCT_NAME = $(POM_GROUP_ID_NO_YAHOO_YINST)
+PRODUCT_NAME = managed_ledger
+#$(POM_GROUP_ID_NO_YAHOO_YINST)
 POMVERSION = $(POM_BASE_VERSION)
 VERSION = $(POM_VERSION)
 SHORT_DESC = $(POM_DESCRIPTION)
@@ -20,8 +21,8 @@ YINST requires pkg yjava_jdk 1.6 *
 
 # YINST post-deactivate rm -r $(ROOT)/libexec/yjava_tomcat/webapps/$(PRODUCT_NAME)
 
-YINST bug-product $(POM_BUG_PRODUCT)
-YINST bug-component $(POM_BUG_COMPONENT)
+YINST bug-product yxms
+YINST bug-component managed-ledger
 
 EOF
 
