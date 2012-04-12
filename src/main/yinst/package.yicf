@@ -1,0 +1,35 @@
+#!/usr/local/bin/perl
+
+print <<'EOF';
+PRODUCT_NAME = $(POM_GROUP_ID_NO_YAHOO_YINST)
+POMVERSION = $(POM_BASE_VERSION)
+VERSION = $(POM_VERSION)
+SHORT_DESC = $(POM_DESCRIPTION)
+LONG_DESC = `/bin/sh ./README.sh`
+CUSTODIAN = "$(POM_MAILINGLIST_0_NAME)@yahoo-inc.com $(POM_URL)"
+SRCDIRS = .
+PACKAGE_OS_SPECIFIC = no
+
+f - - - lib/jars/$(PRODUCT_NAME).jar target/$(PRODUCT_NAME).jar
+f - - - lib/jars/$(PRODUCT_NAME).pom pom.xml
+s - - - libexec/yjava_tomcat/webapps/$(PRODUCT_NAME).war ../../../lib/jars/$(PRODUCT_NAME).war
+
+YINST requires pkg yjava_jdk 1.6 *
+
+# YINST started-by yjava_tomcat
+
+# YINST post-deactivate rm -r $(ROOT)/libexec/yjava_tomcat/webapps/$(PRODUCT_NAME)
+
+YINST bug-product $(POM_BUG_PRODUCT)
+YINST bug-component $(POM_BUG_COMPONENT)
+
+EOF
+
+if($ENV{"BUILDTYPE"} eq "release") {
+print <<'EOF';
+f - - - var/share/package-manifests/$(PRODUCT_NAME)/yinst-manifest.xml target/yjava_maven_plugins_lint/manifest2.xml
+f - - - lib/jars/$(PRODUCT_NAME)-site.jar target/$(PRODUCT_NAME)-site.jar
+f - - - lib/jars/$(PRODUCT_NAME)-javadoc.jar target/$(PRODUCT_NAME)-javadoc.jar
+f - - - lib/jars/$(PRODUCT_NAME)-sources.jar target/$(PRODUCT_NAME)-sources.jar
+EOF
+}
