@@ -2,8 +2,6 @@ package com.yahoo.messaging.bookkeeper.ledger;
 
 import java.util.List;
 
-import org.apache.bookkeeper.client.LedgerEntry;
-
 /**
  * A ManangedCursor is a persisted cursor
  * 
@@ -20,7 +18,7 @@ public interface ManagedCursor {
      * @return the list of entries
      * @throws Exception
      */
-    public List<LedgerEntry> readEntries(int numberOfEntriesToRead) throws Exception;
+    public List<Entry> readEntries(int numberOfEntriesToRead) throws Exception;
 
     /**
      * Tells whether this cursor has already consumed all the available entries.
@@ -38,6 +36,6 @@ public interface ManagedCursor {
      * @param entry the last entry that has been successfully processed
      * @throws Exception
      */
-    public void markDelete(LedgerEntry entry) throws Exception;
+    public void markDelete(Entry entry) throws Exception;
 
 }

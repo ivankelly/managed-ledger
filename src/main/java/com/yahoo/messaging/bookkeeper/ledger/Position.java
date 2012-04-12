@@ -2,8 +2,6 @@ package com.yahoo.messaging.bookkeeper.ledger;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-import org.apache.bookkeeper.client.LedgerEntry;
-
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 
@@ -25,11 +23,6 @@ public class Position implements Comparable<Position> {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid position format '" + text + "'", e);
         }
-    }
-
-    public Position(LedgerEntry entry) {
-        ledgerId = entry.getLedgerId();
-        entryId = entry.getEntryId();
     }
 
     public Position(long ledgerId, long entryId) {

@@ -2,16 +2,10 @@ package com.yahoo.messaging.bookkeeper.ledger;
 
 import java.util.List;
 
-import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
-import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
-import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerFactory;
-import com.yahoo.messaging.bookkeeper.ledger.Position;
 
 public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
@@ -33,16 +27,16 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         // Reads all the entries in batches of 20
         while (cursor.hasMoreEntries()) {
 
-            List<LedgerEntry> entries = cursor.readEntries(20);
+            List<Entry> entries = cursor.readEntries(20);
             log.debug("Read {} entries", entries.size());
 
-            for (LedgerEntry entry : entries) {
-                log.info("Read entry. Position={} Content='{}'", new Position(entry), new String(
-                        entry.getEntry()));
+            for (Entry entry : entries) {
+                log.info("Read entry. Position={} Content='{}'", entry.getPosition(), new String(
+                        entry.getData()));
             }
 
             // Acknowledge only on last entry
-            LedgerEntry lastEntry = entries.get(entries.size() - 1);
+            Entry lastEntry = entries.get(entries.size() - 1);
             cursor.markDelete(lastEntry);
 
             log.info("-----------------------");

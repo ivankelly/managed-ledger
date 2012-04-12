@@ -8,9 +8,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.List;
 
-import org.apache.bookkeeper.client.LedgerEntry;
-
 import com.google.common.base.Objects;
+import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.Position;
 import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
@@ -37,15 +36,13 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#readEntries(int)
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#readEntries(int)
      */
     @Override
-    public List<LedgerEntry> readEntries(int numberOfEntriesToRead) throws Exception {
+    public List<Entry> readEntries(int numberOfEntriesToRead) throws Exception {
         checkArgument(numberOfEntriesToRead > 0);
 
-        Pair<List<LedgerEntry>, Position> pair = ledger.readEntries(readPosition,
-                numberOfEntriesToRead);
+        Pair<List<Entry>, Position> pair = ledger.readEntries(readPosition, numberOfEntriesToRead);
         readPosition = pair.second;
         return pair.first;
     }
@@ -53,8 +50,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#hasMoreEntries()
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#hasMoreEntries()
      */
     @Override
     public boolean hasMoreEntries() {
@@ -65,14 +61,13 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#acknowledge(org.
-     * apache.bookkeeper.client.LedgerEntry)
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#acknowledge(Entry)
      */
     @Override
-    public void markDelete(LedgerEntry entry) throws Exception {
+    public void markDelete(Entry entry) throws Exception {
         checkNotNull(entry);
 
-        acknowledgedPosition = new Position(entry);
+        acknowledgedPosition = entry.getPosition();
         store.updateConsumer(ledger.getName(), name, acknowledgedPosition);
     }
 

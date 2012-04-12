@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
@@ -84,8 +85,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#addEntry(byte[])
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#addEntry(byte[])
      */
     public void addEntry(byte[] data) throws Exception {
         // XXX: Restricting to 50 entries per ledger
@@ -109,8 +109,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#openCursor(java.
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#openCursor(java.
      * lang.String)
      */
     @Override
@@ -173,7 +172,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     // //////////////////////////////////////////////////////////////////////
     // Private helpers
 
-    protected Pair<List<LedgerEntry>, Position> readEntries(Position position, int count)
+    protected Pair<List<Entry>, Position> readEntries(Position position, int count)
             throws Exception {
         if (position.getLedgerId() == -1) {
             position = new Position(ledgers.first(), 0);
@@ -205,10 +204,10 @@ public class ManagedLedgerImpl implements ManagedLedger {
                 va(name, id, firstEntry, lastEntry));
 
         Enumeration<LedgerEntry> entriesEnum = ledger.readEntries(firstEntry, lastEntry);
-        List<LedgerEntry> entries = Lists.newArrayList();
+        List<Entry> entries = Lists.newArrayList();
 
         while (entriesEnum.hasMoreElements())
-            entries.add(entriesEnum.nextElement());
+            entries.add(new EntryImpl(entriesEnum.nextElement()));
 
         // Get the "next read position", we need to advance the position taking
         // care of ledgers boundaries
