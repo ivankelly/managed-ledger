@@ -1,6 +1,7 @@
 package com.yahoo.messaging.bookkeeper.ledger;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
@@ -14,6 +15,8 @@ public class Position implements Comparable<Position> {
     private final long entryId;
 
     public Position(String text) {
+        checkNotNull(text);
+
         String[] ids = text.split(":");
         checkArgument(ids.length == 2, "Invalid Position text format");
 
@@ -48,6 +51,8 @@ public class Position implements Comparable<Position> {
 
     @Override
     public int compareTo(Position other) {
+        checkNotNull(other);
+
         return ComparisonChain.start().compare(this.ledgerId, other.ledgerId)
                 .compare(this.entryId, other.entryId).result();
     }
