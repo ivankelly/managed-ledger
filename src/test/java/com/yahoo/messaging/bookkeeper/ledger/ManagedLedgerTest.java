@@ -3,9 +3,9 @@ package com.yahoo.messaging.bookkeeper.ledger;
 import java.util.List;
 
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
-import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testng.annotations.Test;
 
 public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 

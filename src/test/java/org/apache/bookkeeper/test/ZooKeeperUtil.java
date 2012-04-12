@@ -21,8 +21,8 @@
 
 package org.apache.bookkeeper.test;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import java.io.File;
 import java.net.InetSocketAddress;
@@ -56,7 +56,7 @@ public class ZooKeeperUtil {
 
     public ZooKeeperUtil() {
         zkaddr = new InetSocketAddress(ZooKeeperDefaultPort);
-        connectString= "localhost:" + ZooKeeperDefaultPort;
+        connectString = "localhost:" + ZooKeeperDefaultPort;
     }
 
     public ZooKeeper getZooKeeperClient() {
@@ -82,22 +82,21 @@ public class ZooKeeperUtil {
         serverFactory.startup(zks);
 
         boolean b = ClientBase.waitForServerUp(getZooKeeperConnectString(),
-                                               ClientBase.CONNECTION_TIMEOUT);
+                ClientBase.CONNECTION_TIMEOUT);
         LOG.debug("Server up: " + b);
 
         // create a zookeeper client
         LOG.debug("Instantiate ZK Client");
         final CountDownLatch latch = new CountDownLatch(1);
-        zkc = new ZooKeeper(getZooKeeperConnectString(), 10000,
-                            new Watcher() {
-                                @Override
-                                public void process(WatchedEvent event) {
-                                    // handle session disconnects and expires
-                                    if (event.getState().equals(Watcher.Event.KeeperState.SyncConnected)) {
-                                        latch.countDown();
-                                    }
-                                }
-                            });
+        zkc = new ZooKeeper(getZooKeeperConnectString(), 10000, new Watcher() {
+            @Override
+            public void process(WatchedEvent event) {
+                // handle session disconnects and expires
+                if (event.getState().equals(Watcher.Event.KeeperState.SyncConnected)) {
+                    latch.countDown();
+                }
+            }
+        });
         if (!latch.await(10000, TimeUnit.MILLISECONDS)) {
             zkc.close();
             fail("Could not connect to zookeeper server");
@@ -116,9 +115,8 @@ public class ZooKeeperUtil {
         // shutdown ZK server
         if (serverFactory != null) {
             serverFactory.shutdown();
-            assertTrue("waiting for server down",
-                       ClientBase.waitForServerDown(getZooKeeperConnectString(),
-                                                    ClientBase.CONNECTION_TIMEOUT));
+            assertTrue(ClientBase.waitForServerDown(getZooKeeperConnectString(),
+                    ClientBase.CONNECTION_TIMEOUT), "waiting for server down");
         }
         // ServerStats.unregister();
         FileUtils.deleteDirectory(ZkTmpDir);

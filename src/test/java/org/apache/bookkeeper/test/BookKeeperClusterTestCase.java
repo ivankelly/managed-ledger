@@ -37,10 +37,10 @@ import org.apache.bookkeeper.proto.BookieServer;
 import org.apache.commons.io.FileUtils;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
-import org.junit.After;
-import org.junit.Before;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
 
 
 
@@ -76,7 +76,7 @@ public abstract class BookKeeperClusterTestCase {
         this.numBookies = numBookies;
     }
 
-    @Before
+    @BeforeMethod
     public void setUp() throws Exception {
         try {
             // start zookeeper service
@@ -89,7 +89,7 @@ public abstract class BookKeeperClusterTestCase {
         }
     }
 
-    @After
+    @AfterMethod
     public void tearDown() throws Exception {
         LOG.info("TearDown");
         // stop bookkeeper service
