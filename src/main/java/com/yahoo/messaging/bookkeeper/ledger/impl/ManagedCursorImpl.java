@@ -25,12 +25,15 @@ class ManagedCursorImpl implements ManagedCursor {
     private Position acknowledgedPosition;
     private Position readPosition;
 
-    ManagedCursorImpl(ManagedLedgerImpl ledger, MetaStore store, String name, Position position) {
+    ManagedCursorImpl(ManagedLedgerImpl ledger, MetaStore store, String name, Position position)
+            throws Exception {
         this.ledger = ledger;
         this.store = store;
         this.name = name;
         this.acknowledgedPosition = position;
-        this.readPosition = position;
+        this.readPosition = new Position(position.getLedgerId(), position.getEntryId());
+
+        store.updateConsumer(ledger.getName(), name, acknowledgedPosition);
     }
 
     /*

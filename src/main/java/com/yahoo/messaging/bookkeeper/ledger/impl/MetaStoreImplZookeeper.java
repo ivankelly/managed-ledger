@@ -103,14 +103,14 @@ public class MetaStoreImplZookeeper implements MetaStore {
             consumers.add(Pair.create(name, new Position(content)));
         }
 
+        log.debug("Consumer list: {}", consumers);
         return consumers;
     }
 
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#updateConsumer(
+     * @see com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#updateConsumer(
      * java.lang.String, java.lang.String,
      * com.yahoo.messaging.bookkeeper.ledger.Position)
      */

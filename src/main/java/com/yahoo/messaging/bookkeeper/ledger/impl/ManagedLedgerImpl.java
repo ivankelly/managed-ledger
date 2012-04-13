@@ -7,10 +7,12 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.yahoo.messaging.bookkeeper.ledger.util.VarArgs.va;
 import static java.lang.Math.min;
 
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
@@ -20,6 +22,10 @@ import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -43,23 +49,43 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private final byte[] passwd;
 
     private final MetaStore store;
-    private final Map<Long, LedgerHandle> ledgerCache = Maps.newTreeMap();
+
+    private final Cache<Long, LedgerHandle> ledgerCache;
     private final TreeSet<Long> ledgers = Sets.newTreeSet();
 
     private final Map<String, ManagedCursor> cursors = Maps.newHashMap();
 
     private LedgerHandle lastLedger;
 
+    private long numberOfEntries;
+    private long totalSize;
+
     // //////////////////////////////////////////////////////////////////////
 
     public ManagedLedgerImpl(BookKeeper bookKeeper, ZooKeeper zookeeper,
-            ManagedLedgerConfig config, String name) throws Exception {
+            ManagedLedgerConfig config, final String name) throws Exception {
         this.ensembleSize = config.getEnsembleSize();
         this.quorumSize = config.getQuorumSize();
         this.bookKeeper = bookKeeper;
         this.name = name;
         this.digestType = config.getDigestType();
         this.passwd = config.getPassword();
+
+        RemovalListener<Long, LedgerHandle> removalListener = new RemovalListener<Long, LedgerHandle>() {
+            public void onRemoval(RemovalNotification<Long, LedgerHandle> entry) {
+                LedgerHandle ledger = entry.getValue();
+                log.debug("[{}] Closing ledger: {} cause={}",
+                        va(name, ledger.getId(), entry.getCause()));
+                try {
+                    ledger.close();
+                } catch (Exception e) {
+                    log.error("[{}] Error closing ledger {}", name, ledger.getId());
+                    log.error("Exception: ", e);
+                }
+            }
+        };
+        this.ledgerCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS)
+                .removalListener(removalListener).build();
 
         this.store = new MetaStoreImplZookeeper(zookeeper);
 
@@ -75,6 +101,17 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // Load existing cursors
         for (Pair<String, Position> pair : store.getConsumers(name)) {
             log.debug("[{}] Loading cursor {}", name, pair);
+            cursors.put(pair.first, new ManagedCursorImpl(this, store, pair.first, pair.second));
+        }
+
+        // FIXME: Matteo - Store the sizes/entries count in metadata instead of
+        // recalculating every time
+        for (long id : ledgers) {
+            LedgerHandle ledger = bookKeeper.openLedger(id, digestType, passwd);
+            this.numberOfEntries += ledger.getLastAddConfirmed() + 1;
+            this.totalSize += ledger.getLength();
+
+            ledgerCache.put(id, ledger);
         }
     }
 
@@ -104,6 +141,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
 
         lastLedger.addEntry(data);
+        ++numberOfEntries;
+        totalSize += data.length;
     }
 
     /*
@@ -113,24 +152,25 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * lang.String)
      */
     @Override
-    public ManagedCursor openCursor(String name) {
-        ManagedCursor cursor = cursors.get(name);
+    public ManagedCursor openCursor(String cursorName) throws Exception {
+        ManagedCursor cursor = cursors.get(cursorName);
 
         if (cursor == null) {
             // Create a new one and persist it
             Position position;
             if (lastLedger != null) {
                 // Set the position past the end of the last ledger
-                position = new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed());
+                position = new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed() + 1);
             } else {
                 // Create an invalid position, this will be updated at the next
                 // read
                 position = new Position(-1, -1);
             }
 
-            cursor = new ManagedCursorImpl(this, store, name, position);
+            cursor = new ManagedCursorImpl(this, store, cursorName, position);
         }
 
+        log.debug("[{}] Opened new cursor: {}", this.name, cursor);
         return cursor;
     }
 
@@ -142,8 +182,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      */
     @Override
     public long getNumberOfEntries() {
-        // TODO Auto-generated method stub
-        return 0;
+        return numberOfEntries;
     }
 
     /*
@@ -153,8 +192,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      */
     @Override
     public long getTotalSize() {
-        // TODO Auto-generated method stub
-        return 0;
+        return totalSize;
     }
 
     /*
@@ -164,7 +202,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      */
     @Override
     public void close() {
-
+        ledgerCache.invalidateAll();
     }
 
     // //////////////////////////////////////////////////////////////////////
@@ -180,7 +218,14 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         LedgerHandle ledger = null;
         long id = position.getLedgerId();
-        ledger = ledgerCache.get(id);
+        if (lastLedger != null && id == lastLedger.getId()) {
+            // Current writing ledger is not in the cache (since we don't want
+            // it to be automatically evicted), and we cannot use 2 different
+            // ledger handles (read & write)for the same ledger.
+            ledger = lastLedger;
+        } else {
+            ledger = ledgerCache.getIfPresent(id);
+        }
 
         if (ledger == null) {
             // Ledger is not already open, verify that id is valid and try to
@@ -195,16 +240,21 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         // Perform the read
         long firstEntry = position.getEntryId();
-        checkArgument(firstEntry <= ledger.getLastAddConfirmed(),
-                "Entry id position is out of range entryId=%s lastEntry=%s", firstEntry,
-                ledger.getLastAddConfirmed());
-        long lastEntry = min(firstEntry + count, ledger.getLastAddConfirmed());
+
+        if (firstEntry > ledger.getLastAddConfirmed()) {
+            log.debug("[{}] No more messages to read from ledger={} lastEntry={} readEntry={}",
+                    va(name, ledger.getId(), ledger.getLastAddConfirmed(), firstEntry));
+            return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+        }
+
+        long lastEntry = min(firstEntry + count - 1, ledger.getLastAddConfirmed());
 
         log.debug("[{}] Reading entries from ledger {} - first={} last={}",
                 va(name, id, firstEntry, lastEntry));
 
         Enumeration<LedgerEntry> entriesEnum = ledger.readEntries(firstEntry, lastEntry);
-        List<Entry> entries = Lists.newArrayList();
+        long expectedEntries = lastEntry - firstEntry + 1;
+        List<Entry> entries = Lists.newArrayListWithExpectedSize((int) expectedEntries);
 
         while (entriesEnum.hasMoreElements())
             entries.add(new EntryImpl(entriesEnum.nextElement()));
