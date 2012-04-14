@@ -45,7 +45,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * .lang.String)
      */
     @Override
-    public List<Long> getLedgerIds(String ledgerName) throws Exception {
+    public List<LedgerStat> getLedgerIds(String ledgerName) throws Exception {
         byte[] data;
         try {
             data = zk.getData(prefix + ledgerName, false, null);
@@ -54,9 +54,10 @@ public class MetaStoreImplZookeeper implements MetaStore {
         }
 
         String content = new String(data, Encoding);
-        List<Long> ids = Lists.newArrayList();
-        for (String id : content.split(" "))
-            ids.add(Long.parseLong(id));
+        List<LedgerStat> ids = Lists.newArrayList();
+        for (String ledgerData : content.split(" ")) {
+            ids.add(LedgerStat.parseData(ledgerData));
+        }
 
         return ids;
     }
@@ -69,10 +70,11 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (java.lang.String, java.lang.Iterable)
      */
     @Override
-    public void updateLedgersIds(String ledgerName, Iterable<Long> ledgerIds) throws Exception {
+    public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds)
+            throws Exception {
         StringBuilder sb = new StringBuilder();
-        for (Long id : ledgerIds)
-            sb.append(id).append(' ');
+        for (LedgerStat item : ledgerIds)
+            sb.append(item).append(' ');
 
         try {
             zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1);

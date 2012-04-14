@@ -151,11 +151,10 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 2);
         assertEquals(ledger.getTotalSize(), "dummy-entry-1".getBytes(Encoding).length * 2);
 
-        // XXX: Renable this test
-        // assertEquals(cursor.hasMoreEntries(), true);
+        assertEquals(cursor.hasMoreEntries(), true);
 
-        // entries = cursor.readEntries(100);
-        // assertEquals(entries.size(), 1);
+        entries = cursor.readEntries(100);
+        assertEquals(entries.size(), 1);
 
         ledger.close();
     }

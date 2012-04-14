@@ -8,6 +8,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.google.common.base.Objects;
 import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
@@ -31,7 +34,7 @@ class ManagedCursorImpl implements ManagedCursor {
         this.store = store;
         this.name = name;
         this.acknowledgedPosition = position;
-        this.readPosition = new Position(position.getLedgerId(), position.getEntryId());
+        this.readPosition = new Position(position.getLedgerId(), position.getEntryId() + 1);
 
         store.updateConsumer(ledger.getName(), name, acknowledgedPosition);
     }
@@ -70,6 +73,7 @@ class ManagedCursorImpl implements ManagedCursor {
     public void markDelete(Entry entry) throws Exception {
         checkNotNull(entry);
 
+        log.debug("[{}] Mark delete up to position: {}", ledger.getName(), entry.getPosition());
         acknowledgedPosition = entry.getPosition();
         store.updateConsumer(ledger.getName(), name, acknowledgedPosition);
     }
@@ -95,4 +99,5 @@ class ManagedCursorImpl implements ManagedCursor {
                 .add("readPos", readPosition).toString();
     }
 
+    private static final Logger log = LoggerFactory.getLogger(ManagedCursorImpl.class);
 }

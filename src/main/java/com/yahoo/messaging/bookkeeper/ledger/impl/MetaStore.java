@@ -6,9 +6,9 @@ import com.yahoo.messaging.bookkeeper.ledger.Position;
 import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 public interface MetaStore {
-    List<Long> getLedgerIds(String ledgerName) throws Exception;
+    List<LedgerStat> getLedgerIds(String ledgerName) throws Exception;
 
-    void updateLedgersIds(String ledgerName, Iterable<Long> ledgerIds) throws Exception;
+    void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws Exception;
 
     List<Pair<String, Position>> getConsumers(String ledgerName) throws Exception;
 

@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.client.BookKeeper;
@@ -28,7 +28,6 @@ import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
@@ -51,7 +50,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private final MetaStore store;
 
     private final Cache<Long, LedgerHandle> ledgerCache;
-    private final TreeSet<Long> ledgers = Sets.newTreeSet();
+    private final TreeMap<Long, LedgerStat> ledgers = Maps.newTreeMap();
 
     private final Map<String, ManagedCursor> cursors = Maps.newHashMap();
 
@@ -92,11 +91,23 @@ public class ManagedLedgerImpl implements ManagedLedger {
         log.info("Opening managed ledger {}", name);
 
         // Fetch the list of existing ledgers in the managed ledger
-        ledgers.addAll(store.getLedgerIds(name));
+        for (LedgerStat ls : store.getLedgerIds(name)) {
+            ledgers.put(ls.getLedgerId(), ls);
+        }
+
+        // Last ledger stat may be zeroed, we must update it
+        if (ledgers.size() > 0) {
+            long id = ledgers.lastKey();
+            LedgerHandle handle = bookKeeper.openLedger(id, digestType, passwd);
+            ledgers.put(id,
+                    new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
+            handle.close();
+        }
+
         log.debug("[{}] Contains: {}", name, ledgers);
 
         // Save it back to ensure all nodes exist
-        store.updateLedgersIds(name, ledgers);
+        store.updateLedgersIds(name, ledgers.values());
 
         // Load existing cursors
         for (Pair<String, Position> pair : store.getConsumers(name)) {
@@ -104,14 +115,10 @@ public class ManagedLedgerImpl implements ManagedLedger {
             cursors.put(pair.first, new ManagedCursorImpl(this, store, pair.first, pair.second));
         }
 
-        // FIXME: Matteo - Store the sizes/entries count in metadata instead of
-        // recalculating every time
-        for (long id : ledgers) {
-            LedgerHandle ledger = bookKeeper.openLedger(id, digestType, passwd);
-            this.numberOfEntries += ledger.getLastAddConfirmed() + 1;
-            this.totalSize += ledger.getLength();
-
-            ledgerCache.put(id, ledger);
+        // Calculate total entries and size
+        for (LedgerStat ls : ledgers.values()) {
+            this.numberOfEntries += ls.getEntriesCount();
+            this.totalSize += ls.getSize();
         }
     }
 
@@ -135,8 +142,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
         if (lastLedger == null) {
             // We need to open a new ledger for writing
             lastLedger = bookKeeper.createLedger(ensembleSize, quorumSize, digestType, passwd);
-            ledgers.add(lastLedger.getId());
-            store.updateLedgersIds(name, ledgers);
+            ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), 0, 0));
+            store.updateLedgersIds(name, ledgers.values());
             log.debug("[{}] Created a new ledger: {}", name, lastLedger.getId());
         }
 
@@ -160,7 +167,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
             Position position;
             if (lastLedger != null) {
                 // Set the position past the end of the last ledger
-                position = new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed() + 1);
+                position = new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed());
             } else {
                 // Create an invalid position, this will be updated at the next
                 // read
@@ -213,7 +220,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     protected Pair<List<Entry>, Position> readEntries(Position position, int count)
             throws Exception {
         if (position.getLedgerId() == -1) {
-            position = new Position(ledgers.first(), 0);
+            position = new Position(ledgers.firstKey(), 0);
         }
 
         LedgerHandle ledger = null;
@@ -230,7 +237,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         if (ledger == null) {
             // Ledger is not already open, verify that id is valid and try to
             // open it
-            checkArgument(ledgers.contains(id),
+            checkArgument(ledgers.containsKey(id),
                     "[%s] Ledger id is not assigned to this managed ledger id=%s", name, id);
 
             // Open the ledger and cache the handle
@@ -266,7 +273,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
             newPosition = new Position(id, lastEntry + 1);
         } else {
             // Move to next ledger
-            Long nextLedgerId = ledgers.ceiling(id + 1);
+            Long nextLedgerId = ledgers.ceilingKey(id + 1);
             if (nextLedgerId == null) {
                 // We are already in the last ledger
                 newPosition = new Position(id, lastEntry + 1);
@@ -279,11 +286,42 @@ public class ManagedLedgerImpl implements ManagedLedger {
     }
 
     protected boolean hasMoreEntries(Position position) {
-        if (lastLedger == null)
-            return false;
 
-        return position.getLedgerId() < lastLedger.getId()
-                || position.getEntryId() <= lastLedger.getLastAddConfirmed();
+        if (lastLedger != null) {
+            if (position.getLedgerId() == lastLedger.getId()) {
+                // If we are reading from the last ledger ensure, use the
+                // LedgerHandle metadata
+                return position.getEntryId() <= lastLedger.getLastAddConfirmed();
+            } else if (lastLedger.getLastAddConfirmed() >= 0) {
+                // We have entries in the last ledger and we are reading in an
+                // older ledger
+                return true;
+            }
+        }
+
+        // At this point, lastLedger is either null or empty, we need to check
+        // in the older ledgers for entries past the current position
+        LedgerStat ls = ledgers.get(position.getLedgerId());
+        if (position.getEntryId() < ls.getEntriesCount()) {
+            // There are still entries to read in the current reading ledger
+            return true;
+        }
+
+        // The last options is to check if there are other ledgers after the
+        // current one that contain any entry
+        long currentKey = position.getLedgerId();
+        while (true) {
+            Map.Entry<Long, LedgerStat> entry = ledgers.ceilingEntry(currentKey + 1);
+            if (entry == null)
+                break;
+
+            if (entry.getValue().getEntriesCount() > 0) {
+                // We found a ledger after the current one that has entries
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerImpl.class);
