@@ -18,7 +18,6 @@ import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
-import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,11 +60,12 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
     // //////////////////////////////////////////////////////////////////////
 
-    public ManagedLedgerImpl(BookKeeper bookKeeper, ZooKeeper zookeeper,
+    public ManagedLedgerImpl(BookKeeper bookKeeper, MetaStore store,
             ManagedLedgerConfig config, final String name) throws Exception {
         this.ensembleSize = config.getEnsembleSize();
         this.quorumSize = config.getQuorumSize();
         this.bookKeeper = bookKeeper;
+        this.store = store;
         this.name = name;
         this.digestType = config.getDigestType();
         this.passwd = config.getPassword();
@@ -85,8 +85,6 @@ public class ManagedLedgerImpl implements ManagedLedger {
         };
         this.ledgerCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS)
                 .removalListener(removalListener).build();
-
-        this.store = new MetaStoreImplZookeeper(zookeeper);
 
         log.info("Opening managed ledger {}", name);
 
