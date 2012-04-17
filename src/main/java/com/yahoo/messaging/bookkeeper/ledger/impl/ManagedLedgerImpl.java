@@ -12,6 +12,7 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.client.BookKeeper;
@@ -27,6 +28,9 @@ import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.AddEntryCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenCursorCallback;
 import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
@@ -58,10 +62,12 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private long numberOfEntries;
     private long totalSize;
 
+    private final Executor executor;
+
     // //////////////////////////////////////////////////////////////////////
 
-    public ManagedLedgerImpl(BookKeeper bookKeeper, MetaStore store,
-            ManagedLedgerConfig config, final String name) throws Exception {
+    public ManagedLedgerImpl(BookKeeper bookKeeper, MetaStore store, ManagedLedgerConfig config,
+            Executor executor, final String name) throws Exception {
         this.ensembleSize = config.getEnsembleSize();
         this.quorumSize = config.getQuorumSize();
         this.bookKeeper = bookKeeper;
@@ -69,6 +75,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         this.name = name;
         this.digestType = config.getDigestType();
         this.passwd = config.getPassword();
+        this.executor = executor;
 
         RemovalListener<Long, LedgerHandle> removalListener = new RemovalListener<Long, LedgerHandle>() {
             public void onRemoval(RemovalNotification<Long, LedgerHandle> entry) {
@@ -110,7 +117,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // Load existing cursors
         for (Pair<String, Position> pair : store.getConsumers(name)) {
             log.debug("[{}] Loading cursor {}", name, pair);
-            cursors.put(pair.first, new ManagedCursorImpl(this, store, pair.first, pair.second));
+            cursors.put(pair.first, new ManagedCursorImpl(this, pair.first, pair.second));
         }
 
         // Calculate total entries and size
@@ -153,6 +160,29 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#asyncAddEntry(byte[],
+     * com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.AddEntryCallback,
+     * java.lang.Object)
+     */
+    @Override
+    public void asyncAddEntry(final byte[] data, final AddEntryCallback callback, final Object ctx) {
+        executor.execute(new Runnable() {
+            public void run() {
+                try {
+                    addEntry(data);
+                    callback.addComplete(null, ctx);
+                } catch (Exception e) {
+                    log.warn("Got exception when adding entry: {}", e);
+                    callback.addComplete(e, ctx);
+                }
+            }
+        });
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
      * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#openCursor(java.
      * lang.String)
      */
@@ -172,11 +202,40 @@ public class ManagedLedgerImpl implements ManagedLedger {
                 position = new Position(-1, -1);
             }
 
-            cursor = new ManagedCursorImpl(this, store, cursorName, position);
+            cursor = new ManagedCursorImpl(this, cursorName, position);
         }
 
         log.debug("[{}] Opened new cursor: {}", this.name, cursor);
         return cursor;
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#asyncOpenCursor(java
+     * .lang.String,
+     * com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenCursorCallback,
+     * java.lang.Object)
+     */
+    @Override
+    public void asyncOpenCursor(final String name, final OpenCursorCallback callback,
+            final Object ctx) {
+        executor.execute(new Runnable() {
+            public void run() {
+                Exception error = null;
+                ManagedCursor cursor = null;
+
+                try {
+                    cursor = openCursor(name);
+                } catch (Exception e) {
+                    log.warn("Got exception when adding entry: {}", e);
+                    error = e;
+                }
+
+                callback.openCursorComplete(error, cursor, ctx);
+            }
+        });
     }
 
     /*
@@ -208,6 +267,32 @@ public class ManagedLedgerImpl implements ManagedLedger {
     @Override
     public void close() {
         ledgerCache.invalidateAll();
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#asyncClose(com.yahoo
+     * .messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback,
+     * java.lang.Object)
+     */
+    @Override
+    public void asyncClose(final CloseCallback callback, final Object ctx) {
+        executor.execute(new Runnable() {
+            public void run() {
+                Exception error = null;
+
+                try {
+                    close();
+                } catch (Exception e) {
+                    log.warn("[{}] Got exception when closin managed ledger: {}", name, e);
+                    error = e;
+                }
+
+                callback.closeComplete(error, ctx);
+            }
+        });
     }
 
     // //////////////////////////////////////////////////////////////////////
@@ -320,6 +405,14 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
 
         return false;
+    }
+
+    Executor getExecutor() {
+        return executor;
+    }
+
+    MetaStore getStore() {
+        return store;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerImpl.class);

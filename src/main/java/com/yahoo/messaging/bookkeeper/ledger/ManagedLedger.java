@@ -1,11 +1,16 @@
 package com.yahoo.messaging.bookkeeper.ledger;
 
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.AddEntryCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenCursorCallback;
+
 /**
- * A ManagedLedger it's a superset of a BookKeeper ledger concept. These are the differences : 
+ * A ManagedLedger it's a superset of a BookKeeper ledger concept. These are the
+ * differences :
  * 
  * <ul>
- *  <li>ManagedLedger has a unique name by which it can be created/reopened</li>
- *  <li>xxx</li>
+ * <li>ManagedLedger has a unique name by which it can be created/reopened</li>
+ * <li>xxx</li>
  * </ul>
  */
 public interface ManagedLedger {
@@ -23,6 +28,8 @@ public interface ManagedLedger {
      */
     public void addEntry(byte[] data) throws Exception;
 
+    public void asyncAddEntry(byte[] data, AddEntryCallback callback, Object ctx);
+
     /**
      * Open a ManagedCursor in this ManagedLedger.
      * <p>
@@ -36,6 +43,8 @@ public interface ManagedLedger {
      */
     public ManagedCursor openCursor(String name) throws Exception;
 
+    public void asyncOpenCursor(String name, OpenCursorCallback callback, Object ctx);
+
     /**
      * Get the total number of entries for this managed ledger.
      * <p>
@@ -44,7 +53,7 @@ public interface ManagedLedger {
      * 
      * @return the number of entries
      */
-    public long getNumberOfEntries() throws Exception;
+    public long getNumberOfEntries();
 
     /**
      * Get the total sizes in bytes of the managed ledger, without accounting
@@ -55,7 +64,7 @@ public interface ManagedLedger {
      * 
      * @return total size in bytes
      */
-    public long getTotalSize() throws Exception;
+    public long getTotalSize();
 
     /**
      * Close the current virtual ledger.
@@ -65,4 +74,6 @@ public interface ManagedLedger {
      * 
      */
     public void close() throws Exception;
+
+    public void asyncClose(CloseCallback callback, Object ctx);
 }

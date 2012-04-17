@@ -2,6 +2,9 @@ package com.yahoo.messaging.bookkeeper.ledger;
 
 import java.util.List;
 
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.MarkDeleteCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.ReadEntriesCallback;
+
 /**
  * A ManangedCursor is a persisted cursor
  * 
@@ -20,6 +23,8 @@ public interface ManagedCursor {
      */
     public List<Entry> readEntries(int numberOfEntriesToRead) throws Exception;
 
+    public void asyncReadEntries(int numberOfEntriesToRead, ReadEntriesCallback callback, Object ctx);
+
     /**
      * Tells whether this cursor has already consumed all the available entries.
      * 
@@ -33,9 +38,12 @@ public interface ManagedCursor {
      * (included). This can potentially trigger a ledger deletion, if all the
      * other cursors are done too with the underlying ledger.
      * 
-     * @param entry the last entry that has been successfully processed
+     * @param entry
+     *            the last entry that has been successfully processed
      * @throws Exception
      */
     public void markDelete(Entry entry) throws Exception;
+
+    public void asyncMarkDelete(Entry entry, MarkDeleteCallback callback, Object ctx);
 
 }

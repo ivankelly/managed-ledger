@@ -1,10 +1,13 @@
 package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.slf4j.Logger;
@@ -12,10 +15,17 @@ import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
 
 import com.google.common.base.Charsets;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.AddEntryCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.MarkDeleteCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenCursorCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenLedgerCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.ReadEntriesCallback;
 import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerFactory;
+import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
@@ -157,5 +167,73 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 1);
 
         ledger.close();
+    }
+
+    @Test
+    public void asyncAPI() throws Throwable {
+        ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+
+        factory.asyncOpen("my_test_ledger", new ManagedLedgerConfig(), new OpenLedgerCallback() {
+            public void openLedgerComplete(Throwable status, ManagedLedger ledger, Object ctx) {
+                assertNull(status);
+
+                ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
+                    public void openCursorComplete(Throwable status, ManagedCursor cursor,
+                            Object ctx) {
+                        assertNull(status);
+                        ManagedLedger ledger = (ManagedLedger) ctx;
+
+                        ledger.asyncAddEntry("test".getBytes(Encoding), new AddEntryCallback() {
+                            public void addComplete(Throwable status, Object ctx) {
+                                assertNull(status);
+
+                                @SuppressWarnings("unchecked")
+                                Pair<ManagedLedger, ManagedCursor> pair = (Pair<ManagedLedger, ManagedCursor>) ctx;
+                                ManagedLedger ledger = pair.first;
+                                ManagedCursor cursor = pair.second;
+
+                                assertEquals(ledger.getNumberOfEntries(), 1);
+                                assertEquals(ledger.getTotalSize(),
+                                        "test".getBytes(Encoding).length);
+
+                                cursor.asyncReadEntries(2, new ReadEntriesCallback() {
+                                    public void readEntriesComplete(Throwable status,
+                                            List<Entry> entries, Object ctx) {
+                                        assertNull(status);
+                                        ManagedCursor cursor = (ManagedCursor) ctx;
+
+                                        assertEquals(entries.size(), 1);
+                                        Entry entry = entries.get(0);
+                                        assertEquals(new String(entry.getData(), Encoding), "test");
+
+                                        cursor.asyncMarkDelete(entry, new MarkDeleteCallback() {
+                                            public void markDeleteComplete(Throwable status,
+                                                    Object ctx) {
+                                                assertNull(status);
+                                                ManagedCursor cursor = (ManagedCursor) ctx;
+
+                                                assertEquals(cursor.hasMoreEntries(), false);
+
+                                                try {
+                                                    barrier.await();
+                                                } catch (Exception e) {
+                                                    log.error("Error waiting for barrier");
+                                                }
+                                            }
+                                        }, cursor);
+                                    }
+                                }, cursor);
+                            }
+                        }, new Pair<ManagedLedger, ManagedCursor>(ledger, cursor));
+                    }
+                }, ledger);
+            }
+        }, null);
+
+        barrier.await(5, TimeUnit.SECONDS);
+
+        log.info("Test completed");
     }
 }
