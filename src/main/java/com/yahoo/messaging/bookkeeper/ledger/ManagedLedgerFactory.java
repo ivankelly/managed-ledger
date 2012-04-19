@@ -1,57 +1,87 @@
 package com.yahoo.messaging.bookkeeper.ledger;
 
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-
-import org.apache.bookkeeper.client.BookKeeper;
-import org.apache.zookeeper.ZooKeeper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.DeleteLedgerCallback;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenLedgerCallback;
-import com.yahoo.messaging.bookkeeper.ledger.impl.ManagedLedgerImpl;
-import com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore;
-import com.yahoo.messaging.bookkeeper.ledger.impl.MetaStoreImplZookeeper;
 
-public class ManagedLedgerFactory {
+/**
+ * A factory to open/create managed ledgers and delete them.
+ * 
+ */
+public interface ManagedLedgerFactory {
 
-    private final MetaStore store;
-    private final BookKeeper bookKeeper;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    /**
+     * Open a managed ledger. If the managed ledger does not exist, a new one
+     * will be automatically created. Uses the default configuration parameters.
+     * 
+     * @param name
+     *            the unique name that identifies the managed ledger
+     * @return the managed ledger
+     * @throws Exception
+     */
+    public ManagedLedger open(String name) throws Exception;
 
-    public ManagedLedgerFactory(ZooKeeper zooKeeper, BookKeeper bookKeeper) throws Exception {
-        this.bookKeeper = bookKeeper;
-        this.store = new MetaStoreImplZookeeper(zooKeeper);
-    }
+    /**
+     * Open a managed ledger. If the managed ledger does not exist, a new one
+     * will be automatically created.
+     * 
+     * @param name
+     *            the unique name that identifies the managed ledger
+     * @param config
+     *            managed ledger configuration
+     * @return the managed ledger
+     * @throws Exception
+     */
+    public ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception;
 
-    public ManagedLedger open(String name) throws Exception {
-        return open(name, new ManagedLedgerConfig());
-    }
+    /**
+     * Asynchronous open method.
+     * 
+     * @see #open(String)
+     * @param name
+     *            the unique name that identifies the managed ledger
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context
+     */
+    public void asyncOpen(String name, OpenLedgerCallback callback, Object ctx);
 
-    public ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception {
-        return new ManagedLedgerImpl(bookKeeper, store, config, executor, name);
-    }
+    /**
+     * Asynchronous open method.
+     * 
+     * @see #open(String, ManagedLedgerConfig)
+     * @param name
+     *            the unique name that identifies the managed ledger
+     * @param config
+     *            managed ledger configuration
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context
+     */
+    public void asyncOpen(String name, ManagedLedgerConfig config, OpenLedgerCallback callback,
+            Object ctx);
 
-    public Future<?> asyncOpen(final String name, final ManagedLedgerConfig config,
-            final OpenLedgerCallback callback, final Object ctx) {
-        return executor.submit(new Runnable() {
-            public void run() {
-                try {
-                    ManagedLedger ledger = open(name, config);
-                    callback.openLedgerComplete(null, ledger, ctx);
-                } catch (Exception e) {
-                    log.warn("Got exception when adding entry: {}", e);
-                    callback.openLedgerComplete(e, null, ctx);
-                }
-            }
-        });
-    }
+    /**
+     * Delete a managed ledger completely from the system. Frees and remove all
+     * the associated persisted resources (Ledgers, Cursors).
+     * 
+     * @param name
+     *            the unique name that identifies the managed ledger
+     * @throws Exception
+     */
+    public void delete(String name) throws Exception;
 
-    public void delete(String name) throws Exception {
-
-    }
-
-    private static Logger log = LoggerFactory.getLogger(ManagedLedgerFactory.class);
+    /**
+     * Delete a managed ledger asynchronously.
+     * 
+     * @see #asyncDelete(String, DeleteLedgerCallback, Object)
+     * @param name
+     *            name the unique name that identifies the managed ledger
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context
+     */
+    public void asyncDelete(String name, DeleteLedgerCallback callback, Object ctx);
 }

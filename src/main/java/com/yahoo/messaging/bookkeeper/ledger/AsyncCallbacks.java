@@ -7,6 +7,10 @@ public interface AsyncCallbacks {
         public void openLedgerComplete(Throwable status, ManagedLedger ledger, Object ctx);
     }
 
+    public interface DeleteLedgerCallback {
+        public void deleteLedgerComplete(Throwable status, Object ctx);
+    }
+
     public interface OpenCursorCallback {
         public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx);
     }

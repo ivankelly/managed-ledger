@@ -35,7 +35,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void managedLedgerApi() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
         ManagedLedger ledger = factory.open("my_test_ledger");
 
@@ -71,7 +71,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void simple() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
         ManagedLedger ledger = factory.open("my_test_ledger");
 
@@ -103,7 +103,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void closeAndReopen() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
         ManagedLedger ledger = factory.open("my_test_ledger");
 
@@ -134,7 +134,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void acknowledge1() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
         ManagedLedger ledger = factory.open("my_test_ledger");
 
@@ -171,7 +171,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void asyncAPI() throws Throwable {
-        ManagedLedgerFactory factory = new ManagedLedgerFactory(bkc.getZkHandle(), bkc);
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
