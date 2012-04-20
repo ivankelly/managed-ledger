@@ -5,12 +5,27 @@ import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenCursorCallback;
 
 /**
- * A ManagedLedger it's a superset of a BookKeeper ledger concept. These are the
- * differences :
+ * A ManagedLedger it's a superset of a BookKeeper ledger concept.
+ * <p>
+ * It mimics the concept of an appender log that:
  * 
  * <ul>
- * <li>ManagedLedger has a unique name by which it can be created/reopened</li>
- * <li>xxx</li>
+ * <li>has a unique name (chosen by clients) by which it can be
+ * created/opened/deleted</li>
+ * <li>is always writable: if a writer process crashes, a new writer can re-open
+ * the ManagedLedger and continue writing into it</li>
+ * <li>has multiple persisted consumers (see {@link ManagedCursor}), each of
+ * them with an associated position</li>
+ * <li>when all the consumers have processed all the entries contained in a
+ * Bookkeeper ledger, the ledger is deleted</li>
+ * </ul>
+ * <p>
+ * Caveats:
+ * <ul>
+ * <li>A single ManagedLedger can only be open once at any time. Implementation
+ * can protect double access from the same VM, but accesses from different
+ * machines to the same ManagedLedger need to be avoided through an external
+ * source of coordination.</li>
  * </ul>
  */
 public interface ManagedLedger {
@@ -24,10 +39,23 @@ public interface ManagedLedger {
      * Append a new entry to the end of a managed ledger.
      * 
      * @param data
-     *            to be added to the managed ledger
+     *            data entry to be persisted
+     * @throws Exception
      */
     public void addEntry(byte[] data) throws Exception;
 
+    /**
+     * Append a new entry asynchronously
+     * 
+     * @see #addEntry(byte[])
+     * @param data
+     *            data entry to be persisted
+     * 
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context
+     */
     public void asyncAddEntry(byte[] data, AddEntryCallback callback, Object ctx);
 
     /**
@@ -43,6 +71,17 @@ public interface ManagedLedger {
      */
     public ManagedCursor openCursor(String name) throws Exception;
 
+    /**
+     * Open a ManagedCursor asynchronously.
+     * 
+     * @see #openCursor(String)
+     * @param name
+     *            the name associated with the ManagedCursor
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context
+     */
     public void asyncOpenCursor(String name, OpenCursorCallback callback, Object ctx);
 
     /**
@@ -50,6 +89,8 @@ public interface ManagedLedger {
      * <p>
      * This is defined by the number of entries in all the BookKeeper ledgers
      * that are being maintained by this ManagedLedger.
+     * <p>
+     * This method is non-blocking.
      * 
      * @return the number of entries
      */
@@ -61,19 +102,31 @@ public interface ManagedLedger {
      * <p>
      * This is defined by the sizes of all the BookKeeper ledgers that are being
      * maintained by this ManagedLedger.
+     * <p>
+     * This method is non-blocking.
      * 
      * @return total size in bytes
      */
     public long getTotalSize();
 
     /**
-     * Close the current virtual ledger.
+     * Close the ManagedLedger.
      * <p>
      * This will close all the underlying BookKeeper ledgers. All the
      * ManagedCursors associated will be invalidated.
      * 
+     * @throws Exception
      */
     public void close() throws Exception;
 
+    /**
+     * Close the ManagedLedger asynchronously.
+     * 
+     * @see #close()
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context
+     */
     public void asyncClose(CloseCallback callback, Object ctx);
 }

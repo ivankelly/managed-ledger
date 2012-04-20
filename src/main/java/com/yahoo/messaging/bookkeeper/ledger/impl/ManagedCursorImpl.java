@@ -34,6 +34,9 @@ class ManagedCursorImpl implements ManagedCursor {
         this.ledger = ledger;
         this.name = name;
         this.acknowledgedPosition = position;
+
+        // The read position has to ahead of the acknowledged position, by at
+        // least 1, since it refers to the next entry that has to be read.
         this.readPosition = new Position(position.getLedgerId(), position.getEntryId() + 1);
 
         ledger.getStore().updateConsumer(ledger.getName(), name, acknowledgedPosition);
@@ -96,14 +99,14 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
-     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#acknowledge(Entry)
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#acknowledge(Position)
      */
     @Override
-    public void markDelete(Entry entry) throws Exception {
-        checkNotNull(entry);
+    public void markDelete(Position position) throws Exception {
+        checkNotNull(position);
 
-        log.debug("[{}] Mark delete up to position: {}", ledger.getName(), entry.getPosition());
-        acknowledgedPosition = entry.getPosition();
+        log.debug("[{}] Mark delete up to position: {}", ledger.getName(), position);
+        acknowledgedPosition = position;
         ledger.getStore().updateConsumer(ledger.getName(), name, acknowledgedPosition);
     }
 
@@ -112,19 +115,19 @@ class ManagedCursorImpl implements ManagedCursor {
      * 
      * @see
      * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#asyncMarkDelete(com
-     * .yahoo.messaging.bookkeeper.ledger.Entry,
+     * .yahoo.messaging.bookkeeper.ledger.Position,
      * com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.MarkDeleteCallback,
      * java.lang.Object)
      */
     @Override
-    public void asyncMarkDelete(final Entry entry, final MarkDeleteCallback callback,
+    public void asyncMarkDelete(final Position position, final MarkDeleteCallback callback,
             final Object ctx) {
         ledger.getExecutor().execute(new Runnable() {
             public void run() {
                 Exception error = null;
 
                 try {
-                    markDelete(entry);
+                    markDelete(position);
                 } catch (Exception e) {
                     log.warn("[{}] Got exception when mark deleting entry: {} {}",
                             va(ledger.getName(), name, e));

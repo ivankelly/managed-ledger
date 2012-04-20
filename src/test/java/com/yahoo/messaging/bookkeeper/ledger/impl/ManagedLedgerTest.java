@@ -59,7 +59,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
             // Acknowledge only on last entry
             Entry lastEntry = entries.get(entries.size() - 1);
-            cursor.markDelete(lastEntry);
+            cursor.markDelete(lastEntry.getPosition());
 
             log.info("-----------------------");
         }
@@ -149,7 +149,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 2);
         assertEquals(cursor.hasMoreEntries(), false);
 
-        cursor.markDelete(entries.get(0));
+        cursor.markDelete(entries.get(0).getPosition());
 
         ledger.close();
 
@@ -208,7 +208,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                         Entry entry = entries.get(0);
                                         assertEquals(new String(entry.getData(), Encoding), "test");
 
-                                        cursor.asyncMarkDelete(entry, new MarkDeleteCallback() {
+                                        cursor.asyncMarkDelete(entry.getPosition(), new MarkDeleteCallback() {
                                             public void markDeleteComplete(Throwable status,
                                                     Object ctx) {
                                                 assertNull(status);

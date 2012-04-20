@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 import com.google.common.primitives.Longs;
 
 /**
- *
+ * LedgerStat holds a tuple of (LedgerId, EntriesCount, Size)
  */
 public class LedgerStat implements Comparable<LedgerStat> {
     private final long ledgerId;
