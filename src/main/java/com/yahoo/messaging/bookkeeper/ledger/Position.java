@@ -8,12 +8,22 @@ import com.google.common.collect.ComparisonChain;
 
 /**
  * A Position is a pointer to a specific entry into the managed ledger.
+ * <p>
+ * Specifically a Position is composed of a (LedgerId,EntryId) pair.
  */
 public class Position implements Comparable<Position> {
 
     private final long ledgerId;
     private final long entryId;
 
+    /**
+     * 
+     * @param text
+     *            string serialized position
+     * 
+     * @throws IllegalArgumentException
+     *             if text is not a valid serialized position
+     */
     public Position(String text) {
         checkNotNull(text);
 

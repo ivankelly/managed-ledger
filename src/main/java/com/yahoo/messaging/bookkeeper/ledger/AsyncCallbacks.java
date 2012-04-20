@@ -2,7 +2,12 @@ package com.yahoo.messaging.bookkeeper.ledger;
 
 import java.util.List;
 
+/**
+ * Definition of all the callbacks used for the ManagedLedger asynchronous API.
+ * 
+ */
 public interface AsyncCallbacks {
+
     public interface OpenLedgerCallback {
         public void openLedgerComplete(Throwable status, ManagedLedger ledger, Object ctx);
     }
