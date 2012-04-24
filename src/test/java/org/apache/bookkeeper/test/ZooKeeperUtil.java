@@ -45,7 +45,7 @@ public class ZooKeeperUtil {
     static final Logger LOG = LoggerFactory.getLogger(ZooKeeperUtil.class);
 
     // ZooKeeper related variables
-    protected static Integer ZooKeeperDefaultPort = 2181;
+    protected static Integer ZooKeeperDefaultPort = 2185;
     private final InetSocketAddress zkaddr;
 
     protected ZooKeeperServer zks;
