@@ -27,10 +27,44 @@ import com.google.common.base.Charsets;
  */
 public class ManagedLedgerConfig {
 
+    private int maxEntriesPerLedger = 50000;
+    private int maxSizePerLedgerMb = 100;
     private int ensembleSize = 3;
     private int quorumSize = 2;
     private DigestType digestType = DigestType.MAC;
     private byte[] password = "".getBytes(Charsets.UTF_8);
+
+    /**
+     * @return the maxEntriesPerLedger
+     */
+    public int getMaxEntriesPerLedger() {
+        return maxEntriesPerLedger;
+    }
+
+    /**
+     * @param maxEntriesPerLedger
+     *            the maxEntriesPerLedger to set
+     */
+    public ManagedLedgerConfig setMaxEntriesPerLedger(int maxEntriesPerLedger) {
+        this.maxEntriesPerLedger = maxEntriesPerLedger;
+        return this;
+    }
+
+    /**
+     * @return the maxSizePerLedgerMb
+     */
+    public int getMaxSizePerLedgerMb() {
+        return maxSizePerLedgerMb;
+    }
+
+    /**
+     * @param maxSizePerLedgerMb
+     *            the maxSizePerLedgerMb to set
+     */
+    public ManagedLedgerConfig setMaxSizePerLedgerMb(int maxSizePerLedgerMb) {
+        this.maxSizePerLedgerMb = maxSizePerLedgerMb;
+        return this;
+    }
 
     /**
      * @return the ensembleSize

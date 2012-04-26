@@ -13,9 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/**
- * 
- */
 package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -27,11 +24,12 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.bookkeeper.client.BookKeeper;
-import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.slf4j.Logger;
@@ -58,21 +56,20 @@ import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
  */
 public class ManagedLedgerImpl implements ManagedLedger {
 
-    private final int ensembleSize;
-    private final int quorumSize;
+    private final static long MegaByte = 1024 * 1024;
+
     private final BookKeeper bookKeeper;
     private final String name;
-    private final DigestType digestType;
-    private final byte[] passwd;
 
+    private final ManagedLedgerConfig config;
     private final MetaStore store;
 
     private final Cache<Long, LedgerHandle> ledgerCache;
     private final TreeMap<Long, LedgerStat> ledgers = Maps.newTreeMap();
 
-    private final Map<String, ManagedCursor> cursors = Maps.newHashMap();
+    private final ConcurrentMap<String, ManagedCursor> cursors = Maps.newConcurrentMap();
 
-    private LedgerHandle lastLedger;
+    private AtomicReference<LedgerHandle> lastLedger;
 
     private long numberOfEntries;
     private long totalSize;
@@ -83,14 +80,12 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
     public ManagedLedgerImpl(BookKeeper bookKeeper, MetaStore store, ManagedLedgerConfig config,
             Executor executor, final String name) throws Exception {
-        this.ensembleSize = config.getEnsembleSize();
-        this.quorumSize = config.getQuorumSize();
         this.bookKeeper = bookKeeper;
+        this.config = config;
         this.store = store;
         this.name = name;
-        this.digestType = config.getDigestType();
-        this.passwd = config.getPassword();
         this.executor = executor;
+        this.lastLedger = new AtomicReference<LedgerHandle>();
 
         RemovalListener<Long, LedgerHandle> removalListener = new RemovalListener<Long, LedgerHandle>() {
             public void onRemoval(RemovalNotification<Long, LedgerHandle> entry) {
@@ -118,7 +113,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // Last ledger stat may be zeroed, we must update it
         if (ledgers.size() > 0) {
             long id = ledgers.lastKey();
-            LedgerHandle handle = bookKeeper.openLedger(id, digestType, passwd);
+            LedgerHandle handle = bookKeeper.openLedger(id, config.getDigestType(),
+                    config.getPassword());
             ledgers.put(id,
                     new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
             handle.close();
@@ -151,17 +147,23 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * 
      * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#addEntry(byte[])
      */
-    public void addEntry(byte[] data) throws Exception {
-        // XXX: Restricting to 50 entries per ledger
-        if (lastLedger != null && lastLedger.getLastAddConfirmed() >= 49) {
-            // Close current ledger and force to write into a new one
+    public synchronized void addEntry(byte[] data) throws Exception {
+        LedgerHandle lastLedger = this.lastLedger.get();
+
+        if (lastLedger != null
+                && ((lastLedger.getLastAddConfirmed() >= config.getMaxEntriesPerLedger() - 1) //
+                || (lastLedger.getLength() >= (config.getMaxSizePerLedgerMb() * MegaByte)))) {
+            // The last ledger has reached the limi of entries/size, so we force
+            // to close current ledger and start a new one
             lastLedger.close();
             lastLedger = null;
         }
 
         if (lastLedger == null) {
             // We need to open a new ledger for writing
-            lastLedger = bookKeeper.createLedger(ensembleSize, quorumSize, digestType, passwd);
+            lastLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
+                    config.getDigestType(), config.getPassword());
+            this.lastLedger.set(lastLedger);
             ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), 0, 0));
             store.updateLedgersIds(name, ledgers.values());
             log.debug("[{}] Created a new ledger: {}", name, lastLedger.getId());
@@ -208,9 +210,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
         if (cursor == null) {
             // Create a new one and persist it
             Position position;
-            if (lastLedger != null) {
+            LedgerHandle ledger = lastLedger.get();
+
+            if (ledger != null) {
                 // Set the position past the end of the last ledger
-                position = new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed());
+                position = new Position(ledger.getId(), ledger.getLastAddConfirmed());
             } else {
                 // Create an invalid position, this will be updated at the next
                 // read
@@ -218,6 +222,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
             }
 
             cursor = new ManagedCursorImpl(this, cursorName, position);
+            cursors.put(cursorName, cursor);
         }
 
         log.debug("[{}] Opened new cursor: {}", this.name, cursor);
@@ -323,11 +328,13 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         LedgerHandle ledger = null;
         long id = position.getLedgerId();
-        if (lastLedger != null && id == lastLedger.getId()) {
+
+        LedgerHandle last = lastLedger.get();
+        if (last != null && id == last.getId()) {
             // Current writing ledger is not in the cache (since we don't want
             // it to be automatically evicted), and we cannot use 2 different
             // ledger handles (read & write)for the same ledger.
-            ledger = lastLedger;
+            ledger = last;
         } else {
             ledger = ledgerCache.getIfPresent(id);
         }
@@ -340,7 +347,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
             // Open the ledger and cache the handle
             log.debug("[{}] Opening ledger {} for read", name, id);
-            ledger = bookKeeper.openLedger(id, digestType, passwd);
+            ledger = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
         }
 
         // Perform the read
@@ -385,6 +392,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
     protected boolean hasMoreEntries(Position position) {
 
+        LedgerHandle lastLedger = this.lastLedger.get();
         if (lastLedger != null) {
             if (position.getLedgerId() == lastLedger.getId()) {
                 // If we are reading from the last ledger ensure, use the
@@ -417,6 +425,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
                 // We found a ledger after the current one that has entries
                 return true;
             }
+
+            ++currentKey;
         }
 
         return false;
