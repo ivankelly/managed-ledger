@@ -314,4 +314,26 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         fail("Should have thrown an exception in the above line");
     }
 
+    @Test
+    public void deleteAndReopen() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Reopen
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Delete and reopen
+        factory.delete("my_test_ledger");
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 0);
+        ledger.close();
+    }
+
 }

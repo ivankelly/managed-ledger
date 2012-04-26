@@ -51,9 +51,6 @@ import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
 import com.yahoo.messaging.bookkeeper.ledger.Position;
 import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
-/**
- * 
- */
 public class ManagedLedgerImpl implements ManagedLedger {
 
     private final static long MegaByte = 1024 * 1024;
@@ -430,6 +427,24 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
 
         return false;
+    }
+
+    /**
+     * Delete this ManagedLedger completely from the system.
+     * 
+     * @throws Exception
+     */
+    void delete() throws Exception {
+        close();
+
+        synchronized (this) {
+            for (LedgerStat ls : ledgers.values()) {
+                log.debug("[{}] Deleting ledger {}", name, ls);
+                bookKeeper.deleteLedger(ls.getLedgerId());
+            }
+
+            store.removeManagedLedger(name);
+        }
     }
 
     Executor getExecutor() {
