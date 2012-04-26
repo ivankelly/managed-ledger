@@ -17,6 +17,8 @@ package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -40,6 +42,7 @@ import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerFactory;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
 import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 public class ManagedLedgerTest extends BookKeeperClusterTestCase {
@@ -133,7 +136,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         log.info("Closing ledger and reopening");
 
         // / Reopen the same managed-ledger
-
+        factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ledger = factory.open("my_test_ledger");
 
         cursor = ledger.openCursor("c1");
@@ -223,21 +226,22 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                         Entry entry = entries.get(0);
                                         assertEquals(new String(entry.getData(), Encoding), "test");
 
-                                        cursor.asyncMarkDelete(entry.getPosition(), new MarkDeleteCallback() {
-                                            public void markDeleteComplete(Throwable status,
-                                                    Object ctx) {
-                                                assertNull(status);
-                                                ManagedCursor cursor = (ManagedCursor) ctx;
+                                        cursor.asyncMarkDelete(entry.getPosition(),
+                                                new MarkDeleteCallback() {
+                                                    public void markDeleteComplete(
+                                                            Throwable status, Object ctx) {
+                                                        assertNull(status);
+                                                        ManagedCursor cursor = (ManagedCursor) ctx;
 
-                                                assertEquals(cursor.hasMoreEntries(), false);
+                                                        assertEquals(cursor.hasMoreEntries(), false);
 
-                                                try {
-                                                    barrier.await();
-                                                } catch (Exception e) {
-                                                    log.error("Error waiting for barrier");
-                                                }
-                                            }
-                                        }, cursor);
+                                                        try {
+                                                            barrier.await();
+                                                        } catch (Exception e) {
+                                                            log.error("Error waiting for barrier");
+                                                        }
+                                                    }
+                                                }, cursor);
                                     }
                                 }, cursor);
                             }
@@ -251,4 +255,63 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
         log.info("Test completed");
     }
+
+    @Test
+    public void spanningMultipleLedgers() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(10);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+
+        assertEquals(ledger.getNumberOfEntries(), 0);
+        assertEquals(ledger.getTotalSize(), 0);
+
+        ManagedCursor cursor = ledger.openCursor("c1");
+
+        for (int i = 0; i < 11; i++)
+            ledger.addEntry(("dummy-entry-" + i).getBytes(Encoding));
+
+        List<Entry> entries = cursor.readEntries(100);
+        assertEquals(entries.size(), 10);
+        assertEquals(cursor.hasMoreEntries(), true);
+
+        Position first = entries.get(0).getPosition();
+
+        // Read again, from next ledger id
+        entries = cursor.readEntries(100);
+        assertEquals(entries.size(), 1);
+        assertEquals(cursor.hasMoreEntries(), false);
+
+        Position last = entries.get(0).getPosition();
+
+        log.info("First={} Last={}", first, last);
+        assertTrue(first.getLedgerId() < last.getLedgerId());
+        assertEquals(first.getEntryId(), 0);
+        assertEquals(last.getEntryId(), 0);
+        ledger.close();
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void invalidReadEntriesArg1() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ManagedCursor cursor = ledger.openCursor("c1");
+
+        ledger.addEntry("entry".getBytes());
+        cursor.readEntries(-1);
+
+        fail("Should have thrown an exception in the above line");
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void invalidReadEntriesArg2() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ManagedCursor cursor = ledger.openCursor("c1");
+
+        ledger.addEntry("entry".getBytes());
+        cursor.readEntries(0);
+
+        fail("Should have thrown an exception in the above line");
+    }
+
 }

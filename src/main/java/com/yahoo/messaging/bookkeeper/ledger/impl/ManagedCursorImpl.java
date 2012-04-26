@@ -23,6 +23,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.yahoo.messaging.bookkeeper.ledger.util.VarArgs.va;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
+import javax.annotation.concurrent.ThreadSafe;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,24 +40,25 @@ import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
 /**
  */
+@ThreadSafe
 class ManagedCursorImpl implements ManagedCursor {
 
     private final ManagedLedgerImpl ledger;
     private final String name;
 
-    private Position acknowledgedPosition;
-    private Position readPosition;
+    private AtomicReference<Position> acknowledgedPosition = new AtomicReference<Position>();
+    private AtomicReference<Position> readPosition = new AtomicReference<Position>();
 
     ManagedCursorImpl(ManagedLedgerImpl ledger, String name, Position position) throws Exception {
         this.ledger = ledger;
         this.name = name;
-        this.acknowledgedPosition = position;
+        this.acknowledgedPosition.set(position);
 
         // The read position has to ahead of the acknowledged position, by at
         // least 1, since it refers to the next entry that has to be read.
-        this.readPosition = new Position(position.getLedgerId(), position.getEntryId() + 1);
+        this.readPosition.set(new Position(position.getLedgerId(), position.getEntryId() + 1));
 
-        ledger.getStore().updateConsumer(ledger.getName(), name, acknowledgedPosition);
+        ledger.getStore().updateConsumer(ledger.getName(), name, acknowledgedPosition.get());
     }
 
     /*
@@ -66,8 +70,11 @@ class ManagedCursorImpl implements ManagedCursor {
     public List<Entry> readEntries(int numberOfEntriesToRead) throws Exception {
         checkArgument(numberOfEntriesToRead > 0);
 
-        Pair<List<Entry>, Position> pair = ledger.readEntries(readPosition, numberOfEntriesToRead);
-        readPosition = pair.second;
+        Position current = readPosition.get();
+        Pair<List<Entry>, Position> pair = ledger.readEntries(current, numberOfEntriesToRead);
+
+        Position newPosition = pair.second;
+        readPosition.compareAndSet(current, newPosition);
         return pair.first;
     }
 
@@ -107,7 +114,7 @@ class ManagedCursorImpl implements ManagedCursor {
      */
     @Override
     public boolean hasMoreEntries() {
-        return ledger.hasMoreEntries(readPosition);
+        return ledger.hasMoreEntries(readPosition.get());
     }
 
     /*
@@ -121,8 +128,8 @@ class ManagedCursorImpl implements ManagedCursor {
         checkNotNull(position);
 
         log.debug("[{}] Mark delete up to position: {}", ledger.getName(), position);
-        acknowledgedPosition = position;
-        ledger.getStore().updateConsumer(ledger.getName(), name, acknowledgedPosition);
+        acknowledgedPosition.set(position);
+        ledger.getStore().updateConsumer(ledger.getName(), name, position);
     }
 
     /*
@@ -171,8 +178,9 @@ class ManagedCursorImpl implements ManagedCursor {
      */
     @Override
     public String toString() {
-        return Objects.toStringHelper(this).add("name", name).add("ackPos", acknowledgedPosition)
-                .add("readPos", readPosition).toString();
+        return Objects.toStringHelper(this).add("name", name)
+                .add("ackPos", acknowledgedPosition.get()).add("readPos", readPosition.get())
+                .toString();
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorImpl.class);
