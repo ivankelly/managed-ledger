@@ -22,7 +22,6 @@ import static java.lang.Math.min;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
@@ -415,28 +414,12 @@ public class ManagedLedgerImpl implements ManagedLedger {
         if (ls == null) {
             // Position is still invalid
             return false;
-        } else if (position.getEntryId() < ls.getEntriesCount()) {
+        } else {
+            checkArgument(position.getEntryId() < ls.getEntriesCount());
+
             // There are still entries to read in the current reading ledger
             return true;
         }
-
-        // The last options is to check if there are other ledgers after the
-        // current one that contain any entry
-        long currentKey = position.getLedgerId();
-        while (true) {
-            Map.Entry<Long, LedgerStat> entry = ledgers.ceilingEntry(currentKey + 1);
-            if (entry == null)
-                break;
-
-            if (entry.getValue().getEntriesCount() > 0) {
-                // We found a ledger after the current one that has entries
-                return true;
-            }
-
-            ++currentKey;
-        }
-
-        return false;
     }
 
     /**
