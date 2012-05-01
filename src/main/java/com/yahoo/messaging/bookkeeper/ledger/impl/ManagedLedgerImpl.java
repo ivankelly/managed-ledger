@@ -160,6 +160,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
             // We need to open a new ledger for writing
             lastLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
                     config.getDigestType(), config.getPassword());
+            ledgerCache.put(lastLedger.getId(), lastLedger);
             this.lastLedger.set(lastLedger);
             ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), 0, 0));
             store.updateLedgersIds(name, ledgers.values());
@@ -282,8 +283,14 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#close()
      */
     @Override
-    public void close() {
+    public void close() throws Exception {
+        for (LedgerHandle ledger : ledgerCache.asMap().values()) {
+            log.debug("Closing ledger: {}", ledger.getId());
+            ledger.close();
+        }
+
         ledgerCache.invalidateAll();
+        log.info("Invalidated {} ledgers in cache", ledgerCache.size());
     }
 
     /*
@@ -405,7 +412,10 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // At this point, lastLedger is either null or empty, we need to check
         // in the older ledgers for entries past the current position
         LedgerStat ls = ledgers.get(position.getLedgerId());
-        if (position.getEntryId() < ls.getEntriesCount()) {
+        if (ls == null) {
+            // Position is still invalid
+            return false;
+        } else if (position.getEntryId() < ls.getEntriesCount()) {
             // There are still entries to read in the current reading ledger
             return true;
         }
