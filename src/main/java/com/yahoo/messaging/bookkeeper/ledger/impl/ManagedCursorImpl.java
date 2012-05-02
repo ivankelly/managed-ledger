@@ -183,5 +183,27 @@ class ManagedCursorImpl implements ManagedCursor {
                 .toString();
     }
 
+    /*
+     * (non-Javadoc)
+     * 
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getName()
+     */
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getMarkDeletedPosition
+     * ()
+     */
+    @Override
+    public Position getMarkDeletedPosition() {
+        return acknowledgedPosition.get();
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorImpl.class);
 }
