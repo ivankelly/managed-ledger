@@ -72,7 +72,6 @@ public class ManagedCursorContainer {
 
         cursorEntries.put(cursor.getName(), node);
         pushTowardHead(node);
-        System.out.println("added cursor " + this);
     }
 
     public void removeCursor(ManagedCursor cursor) {
