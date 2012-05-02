@@ -92,23 +92,23 @@ public class ManagedCursorContainerTest {
         assertEquals(container.getSlowestReaderPosition(), null);
 
         ManagedCursor cursor1 = new MockManagedCursor(container, "test1", new Position(5, 5));
-        container.addCursor(cursor1);
+        container.add(cursor1);
         assertEquals(container.getSlowestReaderPosition(), new Position(5, 5));
 
         ManagedCursor cursor2 = new MockManagedCursor(container, "test2", new Position(2, 2));
-        container.addCursor(cursor2);
+        container.add(cursor2);
         assertEquals(container.getSlowestReaderPosition(), new Position(2, 2));
 
         ManagedCursor cursor3 = new MockManagedCursor(container, "test3", new Position(2, 0));
-        container.addCursor(cursor3);
+        container.add(cursor3);
         assertEquals(container.getSlowestReaderPosition(), new Position(2, 2));
 
         ManagedCursor cursor4 = new MockManagedCursor(container, "test4", new Position(4, 0));
-        container.addCursor(cursor4);
+        container.add(cursor4);
         assertEquals(container.getSlowestReaderPosition(), new Position(2, 2));
 
         ManagedCursor cursor5 = new MockManagedCursor(container, "test5", new Position(3, 5));
-        container.addCursor(cursor5);
+        container.add(cursor5);
         assertEquals(container.getSlowestReaderPosition(), new Position(2, 2));
 
         cursor3.markDelete(new Position(3, 0));
@@ -128,7 +128,7 @@ public class ManagedCursorContainerTest {
         assertEquals(container.getSlowestReaderPosition(), null);
 
         ManagedCursor cursor6 = new MockManagedCursor(container, "test6", new Position(6, 5));
-        container.addCursor(cursor6);
+        container.add(cursor6);
         assertEquals(container.getSlowestReaderPosition(), new Position(6, 5));
     }
 

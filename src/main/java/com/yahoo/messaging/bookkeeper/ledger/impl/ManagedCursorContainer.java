@@ -54,7 +54,7 @@ public class ManagedCursorContainer {
     // Maps a cursor to its position in the heap
     Map<String, Node> cursorEntries = Maps.newTreeMap();
 
-    public void addCursor(ManagedCursor cursor) {
+    public void add(ManagedCursor cursor) {
         checkNotNull(cursor);
 
         // Append a new entry at the end of the list
@@ -72,6 +72,14 @@ public class ManagedCursorContainer {
 
         cursorEntries.put(cursor.getName(), node);
         pushTowardHead(node);
+    }
+
+    public ManagedCursor get(String name) {
+        Node node = cursorEntries.get(name);
+        if (node != null)
+            return node.data;
+        else
+            return null;
     }
 
     public void removeCursor(ManagedCursor cursor) {

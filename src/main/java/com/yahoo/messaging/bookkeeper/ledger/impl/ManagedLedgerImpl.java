@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.TreeMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -63,7 +62,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private final Cache<Long, LedgerHandle> ledgerCache;
     private final TreeMap<Long, LedgerStat> ledgers = Maps.newTreeMap();
 
-    private final ConcurrentMap<String, ManagedCursor> cursors = Maps.newConcurrentMap();
+    private final ManagedCursorContainer cursors = new ManagedCursorContainer();
 
     private AtomicReference<LedgerHandle> lastLedger;
 
@@ -124,7 +123,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // Load existing cursors
         for (Pair<String, Position> pair : store.getConsumers(name)) {
             log.debug("[{}] Loading cursor {}", name, pair);
-            cursors.put(pair.first, new ManagedCursorImpl(this, pair.first, pair.second));
+            cursors.add(new ManagedCursorImpl(this, pair.first, pair.second));
         }
 
         // Calculate total entries and size
@@ -152,6 +151,13 @@ public class ManagedLedgerImpl implements ManagedLedger {
             // The last ledger has reached the limi of entries/size, so we force
             // to close current ledger and start a new one
             lastLedger.close();
+
+            // Update LedgerStat instance
+            ledgers.put(
+                    lastLedger.getId(),
+                    new LedgerStat(lastLedger.getId(), lastLedger.getLastAddConfirmed(), lastLedger
+                            .getLength()));
+
             lastLedger = null;
         }
 
@@ -219,7 +225,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
             }
 
             cursor = new ManagedCursorImpl(this, cursorName, position);
-            cursors.put(cursorName, cursor);
+            cursors.add(cursor);
         }
 
         log.debug("[{}] Opened new cursor: {}", this.name, cursor);
@@ -419,6 +425,31 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
             // There are still entries to read in the current reading ledger
             return true;
+        }
+    }
+
+    protected void updateCursor(ManagedCursorImpl cursor, Position newPosition) throws Exception {
+        // First update the metadata store, so that if we don't succeed we have
+        // not changed any other state
+        store.updateConsumer(name, cursor.getName(), newPosition);
+        cursor.setAcknowledgedPosition(newPosition);
+
+        cursors.cursorUpdated(cursor);
+
+        // Delete ledgers if needed
+        long slowestReaderPosition = cursors.getSlowestReaderPosition().getLedgerId();
+        while (!ledgers.isEmpty() && ledgers.firstKey() < slowestReaderPosition) {
+            // Delete ledger from BookKeeper
+            LedgerStat ledgerToDelete = ledgers.firstEntry().getValue();
+            log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
+            bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
+
+            // Update metadata
+            ledgers.remove(ledgerToDelete.getLedgerId());
+            store.updateLedgersIds(name, ledgers.values());
+
+            numberOfEntries -= ledgerToDelete.getEntriesCount();
+            totalSize -= ledgerToDelete.getSize();
         }
     }
 
