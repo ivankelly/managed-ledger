@@ -112,8 +112,8 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      */
     @Override
     public void delete(String name) throws Exception {
-        // TODO Auto-generated method stub
-
+        ManagedLedgerImpl ledger = (ManagedLedgerImpl) open(name);
+        ledger.delete();
     }
 
     /*
@@ -126,9 +126,19 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * , java.lang.Object)
      */
     @Override
-    public void asyncDelete(String name, DeleteLedgerCallback callback, Object ctx) {
-        // TODO Auto-generated method stub
-
+    public void asyncDelete(final String ledger, final DeleteLedgerCallback callback,
+            final Object ctx) {
+        executor.submit(new Runnable() {
+            public void run() {
+                try {
+                    delete(ledger);
+                    callback.deleteLedgerComplete(null, ctx);
+                } catch (Exception e) {
+                    log.warn("Got exception when deleting MangedLedger: {}", e);
+                    callback.deleteLedgerComplete(e, ctx);
+                }
+            }
+        });
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerFactoryImpl.class);

@@ -128,8 +128,8 @@ class ManagedCursorImpl implements ManagedCursor {
         checkNotNull(position);
 
         log.debug("[{}] Mark delete up to position: {}", ledger.getName(), position);
-        acknowledgedPosition.set(position);
         ledger.getStore().updateConsumer(ledger.getName(), name, position);
+        acknowledgedPosition.set(position);
     }
 
     /*
@@ -181,6 +181,28 @@ class ManagedCursorImpl implements ManagedCursor {
         return Objects.toStringHelper(this).add("name", name)
                 .add("ackPos", acknowledgedPosition.get()).add("readPos", readPosition.get())
                 .toString();
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getName()
+     */
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getMarkDeletedPosition
+     * ()
+     */
+    @Override
+    public Position getMarkDeletedPosition() {
+        return acknowledgedPosition.get();
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorImpl.class);

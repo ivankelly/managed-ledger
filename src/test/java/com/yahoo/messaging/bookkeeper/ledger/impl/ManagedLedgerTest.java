@@ -16,6 +16,7 @@
 package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -33,6 +34,8 @@ import org.testng.annotations.Test;
 
 import com.google.common.base.Charsets;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.AddEntryCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback;
+import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.DeleteLedgerCallback;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.MarkDeleteCallback;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenCursorCallback;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenLedgerCallback;
@@ -290,6 +293,45 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
+    @Test(timeOut = 3000)
+    public void spanningMultipleLedgersWithSize() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1000000);
+        config.setMaxSizePerLedgerMb(1);
+        config.setEnsembleSize(1);
+        config.setQuorumSize(1);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+
+        assertEquals(ledger.getNumberOfEntries(), 0);
+        assertEquals(ledger.getTotalSize(), 0);
+
+        ManagedCursor cursor = ledger.openCursor("c1");
+
+        byte[] content = new byte[1023 * 1024];
+
+        for (int i = 0; i < 3; i++)
+            ledger.addEntry(content);
+
+        List<Entry> entries = cursor.readEntries(100);
+        assertEquals(entries.size(), 2);
+        assertEquals(cursor.hasMoreEntries(), true);
+
+        Position first = entries.get(0).getPosition();
+
+        // Read again, from next ledger id
+        entries = cursor.readEntries(100);
+        assertEquals(entries.size(), 1);
+        assertEquals(cursor.hasMoreEntries(), false);
+
+        Position last = entries.get(0).getPosition();
+
+        log.info("First={} Last={}", first, last);
+        assertTrue(first.getLedgerId() < last.getLedgerId());
+        assertEquals(first.getEntryId(), 0);
+        assertEquals(last.getEntryId(), 0);
+        ledger.close();
+    }
+
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void invalidReadEntriesArg1() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
@@ -312,6 +354,284 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         cursor.readEntries(0);
 
         fail("Should have thrown an exception in the above line");
+    }
+
+    @Test
+    public void deleteAndReopen() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Reopen
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Delete and reopen
+        factory.delete("my_test_ledger");
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 0);
+        ledger.close();
+    }
+
+    @Test
+    public void deleteAndReopenWithCursors() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Reopen
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Delete and reopen
+        factory.delete("my_test_ledger");
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 0);
+        ManagedCursor cursor = ledger.openCursor("test-cursor");
+        assertEquals(cursor.hasMoreEntries(), false);
+        ledger.close();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncDeleteWithError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        // Reopen
+        ledger = factory.open("my_test_ledger");
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        ledger.close();
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+        stopBKCluster();
+        stopZKCluster();
+
+        // Delete and reopen
+        factory.asyncDelete("my_test_ledger", new DeleteLedgerCallback() {
+
+            public void deleteLedgerComplete(Throwable status, Object ctx) {
+                assertNull(ctx);
+                assertNotNull(status);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncAddEntryWithoutError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+
+        ledger.asyncAddEntry("dummy-entry-1".getBytes(Encoding), new AddEntryCallback() {
+            public void addComplete(Throwable status, Object ctx) {
+                assertNull(ctx);
+                assertNull(status);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncAddEntryWithError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+        stopBKCluster();
+        stopZKCluster();
+
+        ledger.asyncAddEntry("dummy-entry-1".getBytes(Encoding), new AddEntryCallback() {
+            public void addComplete(Throwable status, Object ctx) {
+                assertNull(ctx);
+                assertNotNull(status);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncCloseWithoutError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+
+        ledger.asyncClose(new CloseCallback() {
+            public void closeComplete(Throwable status, Object ctx) {
+                assertNull(ctx);
+                assertNull(status);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncCloseWithError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+
+        stopBKCluster();
+        stopZKCluster();
+
+        ledger.asyncClose(new CloseCallback() {
+            public void closeComplete(Throwable status, Object ctx) {
+                assertNull(ctx);
+                assertNotNull(status);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncOpenCursorWithoutError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+
+        ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
+            public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
+                assertNull(ctx);
+                assertNull(status);
+                assertNotNull(cursor);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void asyncOpenCursorWithError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+
+        final CyclicBarrier barrier = new CyclicBarrier(2);
+
+        stopBKCluster();
+        stopZKCluster();
+
+        ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
+            public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
+                assertNull(ctx);
+                assertNotNull(status);
+                assertNull(cursor);
+
+                try {
+                    barrier.await();
+                } catch (Exception e) {
+                    fail("Received exception ", e);
+                }
+            }
+        }, null);
+
+        barrier.await();
+    }
+
+    @Test
+    public void readFromOlderLedger() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+        ManagedCursor cursor = ledger.openCursor("test");
+
+        ledger.addEntry("entry-1".getBytes(Encoding));
+        ledger.addEntry("entry-2".getBytes(Encoding));
+
+        assertEquals(cursor.hasMoreEntries(), true);
+    }
+
+    @Test
+    public void readFromOlderLedgers() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+        ManagedCursor cursor = ledger.openCursor("test");
+
+        ledger.addEntry("entry-1".getBytes(Encoding));
+        ledger.addEntry("entry-2".getBytes(Encoding));
+        ledger.addEntry("entry-3".getBytes(Encoding));
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        cursor.readEntries(1);
+        assertEquals(cursor.hasMoreEntries(), true);
+        cursor.readEntries(1);
+        assertEquals(cursor.hasMoreEntries(), true);
+        cursor.readEntries(1);
+        assertEquals(cursor.hasMoreEntries(), false);
     }
 
 }

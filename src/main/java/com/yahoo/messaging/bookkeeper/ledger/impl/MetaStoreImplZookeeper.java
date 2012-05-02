@@ -146,5 +146,36 @@ public class MetaStoreImplZookeeper implements MetaStore {
         }
     }
 
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#removeConsumer(java
+     * .lang.String, java.lang.String)
+     */
+    @Override
+    public void removeConsumer(String ledgerName, String consumerName) throws Exception {
+        log.info("[{}] Remove consumer={}", ledgerName, consumerName);
+        zk.delete(prefix + ledgerName + "/" + consumerName, -1);
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.impl.MetaStore#removeManagedLedger
+     * (java.lang.String)
+     */
+    @Override
+    public void removeManagedLedger(String ledgerName) throws Exception {
+        // First remove all the consumers
+        for (String consumer : zk.getChildren(prefix + ledgerName, false)) {
+            removeConsumer(ledgerName, consumer);
+        }
+
+        log.info("[{}] Remove ManagedLedger", ledgerName);
+        zk.delete(prefix + ledgerName, -1);
+    }
+
     private static final Logger log = LoggerFactory.getLogger(MetaStoreImplZookeeper.class);
 }

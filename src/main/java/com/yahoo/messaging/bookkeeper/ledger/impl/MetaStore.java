@@ -61,10 +61,31 @@ public interface MetaStore {
      * Update the persisted position of a consumer
      * 
      * @param ledgerName
-     * the name of the ManagedLedger
+     *            the name of the ManagedLedger
      * @param consumerName
      * @param position
      * @throws Exception
      */
     void updateConsumer(String ledgerName, String consumerName, Position position) throws Exception;
+
+    /**
+     * Drop the persistent state of a consumer from the metadata store
+     * 
+     * @param ledgerName
+     *            the name of the ManagedLedger
+     * @param consumerName
+     *            the consumer name
+     * @throws Exception
+     */
+    void removeConsumer(String ledgerName, String consumerName) throws Exception;
+
+    /**
+     * Drop the persistent state for the ManagedLedger and all its associated
+     * consumers.
+     * 
+     * @param ledgerName
+     *            the name of the ManagedLedger
+     * @throws Exception
+     */
+    void removeManagedLedger(String ledgerName) throws Exception;
 }

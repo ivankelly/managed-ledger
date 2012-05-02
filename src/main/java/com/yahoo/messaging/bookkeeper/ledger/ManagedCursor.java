@@ -29,6 +29,13 @@ import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.ReadEntriesCallback;
 public interface ManagedCursor {
 
     /**
+     * Get the unique cursor name.
+     * 
+     * @return the cursor name
+     */
+    public String getName();
+
+    /**
      * Read entries from the ManagedLedger, up to the specified number. The
      * returned list can be smaller.
      * 
@@ -85,4 +92,10 @@ public interface ManagedCursor {
      */
     public void asyncMarkDelete(Position position, MarkDeleteCallback callback, Object ctx);
 
+    /**
+     * Get the newest mark deleted position on this cursor.
+     * 
+     * @return the mark deleted position
+     */
+    public Position getMarkDeletedPosition();
 }

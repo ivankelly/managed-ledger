@@ -22,7 +22,6 @@ import static java.lang.Math.min;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
@@ -51,9 +50,6 @@ import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
 import com.yahoo.messaging.bookkeeper.ledger.Position;
 import com.yahoo.messaging.bookkeeper.ledger.util.Pair;
 
-/**
- * 
- */
 public class ManagedLedgerImpl implements ManagedLedger {
 
     private final static long MegaByte = 1024 * 1024;
@@ -163,6 +159,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
             // We need to open a new ledger for writing
             lastLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
                     config.getDigestType(), config.getPassword());
+            ledgerCache.put(lastLedger.getId(), lastLedger);
             this.lastLedger.set(lastLedger);
             ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), 0, 0));
             store.updateLedgersIds(name, ledgers.values());
@@ -285,8 +282,14 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#close()
      */
     @Override
-    public void close() {
+    public void close() throws Exception {
+        for (LedgerHandle ledger : ledgerCache.asMap().values()) {
+            log.debug("Closing ledger: {}", ledger.getId());
+            ledger.close();
+        }
+
         ledgerCache.invalidateAll();
+        log.info("Invalidated {} ledgers in cache", ledgerCache.size());
     }
 
     /*
@@ -408,28 +411,33 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // At this point, lastLedger is either null or empty, we need to check
         // in the older ledgers for entries past the current position
         LedgerStat ls = ledgers.get(position.getLedgerId());
-        if (position.getEntryId() < ls.getEntriesCount()) {
+        if (ls == null) {
+            // Position is still invalid
+            return false;
+        } else {
+            checkArgument(position.getEntryId() < ls.getEntriesCount());
+
             // There are still entries to read in the current reading ledger
             return true;
         }
+    }
 
-        // The last options is to check if there are other ledgers after the
-        // current one that contain any entry
-        long currentKey = position.getLedgerId();
-        while (true) {
-            Map.Entry<Long, LedgerStat> entry = ledgers.ceilingEntry(currentKey + 1);
-            if (entry == null)
-                break;
+    /**
+     * Delete this ManagedLedger completely from the system.
+     * 
+     * @throws Exception
+     */
+    void delete() throws Exception {
+        close();
 
-            if (entry.getValue().getEntriesCount() > 0) {
-                // We found a ledger after the current one that has entries
-                return true;
+        synchronized (this) {
+            for (LedgerStat ls : ledgers.values()) {
+                log.debug("[{}] Deleting ledger {}", name, ls);
+                bookKeeper.deleteLedger(ls.getLedgerId());
             }
 
-            ++currentKey;
+            store.removeManagedLedger(name);
         }
-
-        return false;
     }
 
     Executor getExecutor() {
