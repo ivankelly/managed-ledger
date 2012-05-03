@@ -128,8 +128,11 @@ class ManagedCursorImpl implements ManagedCursor {
         checkNotNull(position);
 
         log.debug("[{}] Mark delete up to position: {}", ledger.getName(), position);
-        ledger.getStore().updateConsumer(ledger.getName(), name, position);
-        acknowledgedPosition.set(position);
+        ledger.updateCursor(this, position);
+    }
+
+    protected void setAcknowledgedPosition(Position newPosition) {
+        acknowledgedPosition.set(newPosition);
     }
 
     /*

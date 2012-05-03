@@ -634,4 +634,32 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), false);
     }
 
+    @Test
+    public void triggerLedgerDeletion() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+        ManagedCursor cursor = ledger.openCursor("test");
+
+        ledger.addEntry("entry-1".getBytes(Encoding));
+        ledger.addEntry("entry-2".getBytes(Encoding));
+        ledger.addEntry("entry-3".getBytes(Encoding));
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        List<Entry> entries = cursor.readEntries(1);
+        assertEquals(entries.size(), 1);
+        assertEquals(ledger.getNumberOfEntries(), 3);
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        entries = cursor.readEntries(1);
+        assertEquals(cursor.hasMoreEntries(), true);
+
+        cursor.markDelete(entries.get(0).getPosition());
+        // A ledger must have been deleted at this point
+        assertEquals(ledger.getNumberOfEntries(), 2);
+
+        cursor.readEntries(1);
+        assertEquals(cursor.hasMoreEntries(), false);
+    }
+
 }

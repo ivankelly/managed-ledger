@@ -19,7 +19,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.util.Map;
 
-import com.google.inject.internal.Maps;
+import com.google.common.collect.Maps;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.Position;
 
@@ -54,7 +54,7 @@ public class ManagedCursorContainer {
     // Maps a cursor to its position in the heap
     Map<String, Node> cursorEntries = Maps.newTreeMap();
 
-    public void addCursor(ManagedCursor cursor) {
+    public void add(ManagedCursor cursor) {
         checkNotNull(cursor);
 
         // Append a new entry at the end of the list
@@ -72,7 +72,14 @@ public class ManagedCursorContainer {
 
         cursorEntries.put(cursor.getName(), node);
         pushTowardHead(node);
-        System.out.println("added cursor " + this);
+    }
+
+    public ManagedCursor get(String name) {
+        Node node = cursorEntries.get(name);
+        if (node != null)
+            return node.data;
+        else
+            return null;
     }
 
     public void removeCursor(ManagedCursor cursor) {
