@@ -153,10 +153,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
             lastLedger.close();
 
             // Update LedgerStat instance
-            ledgers.put(
-                    lastLedger.getId(),
-                    new LedgerStat(lastLedger.getId(), lastLedger.getLastAddConfirmed(), lastLedger
-                            .getLength()));
+            ledgers.put(lastLedger.getId(),
+                    new LedgerStat(lastLedger.getId(), lastLedger.getLastAddConfirmed() + 1,
+                            lastLedger.getLength()));
 
             lastLedger = null;
         }
