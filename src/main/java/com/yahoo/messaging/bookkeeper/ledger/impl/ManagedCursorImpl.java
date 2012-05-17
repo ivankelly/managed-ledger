@@ -87,8 +87,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * java.lang.Object)
      */
     @Override
-    public void asyncReadEntries(final int numberOfEntriesToRead,
-            final ReadEntriesCallback callback, final Object ctx) {
+    public void asyncReadEntries(final int numberOfEntriesToRead, final ReadEntriesCallback callback, final Object ctx) {
         ledger.getExecutor().execute(new Runnable() {
             public void run() {
                 Exception error = null;
@@ -97,8 +96,7 @@ class ManagedCursorImpl implements ManagedCursor {
                 try {
                     entries = readEntries(numberOfEntriesToRead);
                 } catch (Exception e) {
-                    log.warn("[{}] Got exception when reading from cursor: {} {}",
-                            va(ledger.getName(), name, e));
+                    log.warn("[{}] Got exception when reading from cursor: {} {}", va(ledger.getName(), name, e));
                     error = e;
                 }
 
@@ -145,8 +143,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * java.lang.Object)
      */
     @Override
-    public void asyncMarkDelete(final Position position, final MarkDeleteCallback callback,
-            final Object ctx) {
+    public void asyncMarkDelete(final Position position, final MarkDeleteCallback callback, final Object ctx) {
         ledger.getExecutor().execute(new Runnable() {
             public void run() {
                 Exception error = null;
@@ -154,8 +151,7 @@ class ManagedCursorImpl implements ManagedCursor {
                 try {
                     markDelete(position);
                 } catch (Exception e) {
-                    log.warn("[{}] Got exception when mark deleting entry: {} {}",
-                            va(ledger.getName(), name, e));
+                    log.warn("[{}] Got exception when mark deleting entry: {} {}", va(ledger.getName(), name, e));
                     error = e;
                 }
 
@@ -181,9 +177,8 @@ class ManagedCursorImpl implements ManagedCursor {
      */
     @Override
     public String toString() {
-        return Objects.toStringHelper(this).add("name", name)
-                .add("ackPos", acknowledgedPosition.get()).add("readPos", readPosition.get())
-                .toString();
+        return Objects.toStringHelper(this).add("name", name).add("ackPos", acknowledgedPosition.get())
+                .add("readPos", readPosition.get()).toString();
     }
 
     /*

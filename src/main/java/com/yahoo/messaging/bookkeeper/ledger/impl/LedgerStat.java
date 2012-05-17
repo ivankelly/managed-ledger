@@ -48,8 +48,7 @@ public class LedgerStat implements Comparable<LedgerStat> {
         Matcher m = pattern.matcher(data);
         checkArgument(m.matches(), "LedgerStat format is incorrect");
 
-        return new LedgerStat(Long.parseLong(m.group(1)), Long.parseLong(m.group(2)),
-                Long.parseLong(m.group(3)));
+        return new LedgerStat(Long.parseLong(m.group(1)), Long.parseLong(m.group(2)), Long.parseLong(m.group(3)));
     }
 
     /**

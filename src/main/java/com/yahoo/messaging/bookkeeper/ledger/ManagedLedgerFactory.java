@@ -74,8 +74,7 @@ public interface ManagedLedgerFactory {
      * @param ctx
      *            opaque context
      */
-    public void asyncOpen(String name, ManagedLedgerConfig config, OpenLedgerCallback callback,
-            Object ctx);
+    public void asyncOpen(String name, ManagedLedgerConfig config, OpenLedgerCallback callback, Object ctx);
 
     /**
      * Delete a managed ledger completely from the system. Frees and remove all

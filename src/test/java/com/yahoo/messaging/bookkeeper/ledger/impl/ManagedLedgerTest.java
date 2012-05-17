@@ -74,8 +74,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
             log.debug("Read {} entries", entries.size());
 
             for (Entry entry : entries) {
-                log.info("Read entry. Position={} Content='{}'", entry.getPosition(), new String(
-                        entry.getData()));
+                log.info("Read entry. Position={} Content='{}'", entry.getPosition(), new String(entry.getData()));
             }
 
             // Acknowledge only on last entry
@@ -201,8 +200,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                 assertNull(status);
 
                 ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
-                    public void openCursorComplete(Throwable status, ManagedCursor cursor,
-                            Object ctx) {
+                    public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
                         assertNull(status);
                         ManagedLedger ledger = (ManagedLedger) ctx;
 
@@ -216,12 +214,10 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                 ManagedCursor cursor = pair.second;
 
                                 assertEquals(ledger.getNumberOfEntries(), 1);
-                                assertEquals(ledger.getTotalSize(),
-                                        "test".getBytes(Encoding).length);
+                                assertEquals(ledger.getTotalSize(), "test".getBytes(Encoding).length);
 
                                 cursor.asyncReadEntries(2, new ReadEntriesCallback() {
-                                    public void readEntriesComplete(Throwable status,
-                                            List<Entry> entries, Object ctx) {
+                                    public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
                                         assertNull(status);
                                         ManagedCursor cursor = (ManagedCursor) ctx;
 
@@ -229,22 +225,20 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                         Entry entry = entries.get(0);
                                         assertEquals(new String(entry.getData(), Encoding), "test");
 
-                                        cursor.asyncMarkDelete(entry.getPosition(),
-                                                new MarkDeleteCallback() {
-                                                    public void markDeleteComplete(
-                                                            Throwable status, Object ctx) {
-                                                        assertNull(status);
-                                                        ManagedCursor cursor = (ManagedCursor) ctx;
+                                        cursor.asyncMarkDelete(entry.getPosition(), new MarkDeleteCallback() {
+                                            public void markDeleteComplete(Throwable status, Object ctx) {
+                                                assertNull(status);
+                                                ManagedCursor cursor = (ManagedCursor) ctx;
 
-                                                        assertEquals(cursor.hasMoreEntries(), false);
+                                                assertEquals(cursor.hasMoreEntries(), false);
 
-                                                        try {
-                                                            barrier.await();
-                                                        } catch (Exception e) {
-                                                            log.error("Error waiting for barrier");
-                                                        }
-                                                    }
-                                                }, cursor);
+                                                try {
+                                                    barrier.await();
+                                                } catch (Exception e) {
+                                                    log.error("Error waiting for barrier");
+                                                }
+                                            }
+                                        }, cursor);
                                     }
                                 }, cursor);
                             }

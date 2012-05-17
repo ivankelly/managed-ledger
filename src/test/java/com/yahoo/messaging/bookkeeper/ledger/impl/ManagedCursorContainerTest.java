@@ -50,8 +50,7 @@ public class ManagedCursorContainerTest {
         }
 
         @Override
-        public void asyncReadEntries(int numberOfEntriesToRead, ReadEntriesCallback callback,
-                Object ctx) {
+        public void asyncReadEntries(int numberOfEntriesToRead, ReadEntriesCallback callback, Object ctx) {
             callback.readEntriesComplete(null, null, ctx);
         }
 

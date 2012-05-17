@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-    package com.yahoo.messaging.bookkeeper.ledger;
+package com.yahoo.messaging.bookkeeper.ledger;
 
 import static com.yahoo.messaging.bookkeeper.ledger.util.VarArgs.va;
 
@@ -55,8 +55,7 @@ public class SimpleBookKeeperTest extends BookKeeperClusterTestCase {
         while (entries.hasMoreElements()) {
             LedgerEntry entry = entries.nextElement();
             String content = new String(entry.getEntry(), Encoding);
-            log.info("Entry {}  lenght={} content='{}'",
-                    va(entry.getEntryId(), entry.getLength(), content));
+            log.info("Entry {}  lenght={} content='{}'", va(entry.getEntryId(), entry.getLength(), content));
         }
 
         ledger.close();

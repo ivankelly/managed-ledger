@@ -88,8 +88,8 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * java.lang.Object)
      */
     @Override
-    public void asyncOpen(final String name, final ManagedLedgerConfig config,
-            final OpenLedgerCallback callback, final Object ctx) {
+    public void asyncOpen(final String name, final ManagedLedgerConfig config, final OpenLedgerCallback callback,
+            final Object ctx) {
         executor.submit(new Runnable() {
             public void run() {
                 try {
@@ -126,8 +126,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * , java.lang.Object)
      */
     @Override
-    public void asyncDelete(final String ledger, final DeleteLedgerCallback callback,
-            final Object ctx) {
+    public void asyncDelete(final String ledger, final DeleteLedgerCallback callback, final Object ctx) {
         executor.submit(new Runnable() {
             public void run() {
                 try {
