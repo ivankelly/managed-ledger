@@ -163,16 +163,6 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see java.lang.Object#hashCode()
-     */
-    @Override
-    public int hashCode() {
-        return Objects.hashCode(name);
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
      * @see java.lang.Object#toString()
      */
     @Override

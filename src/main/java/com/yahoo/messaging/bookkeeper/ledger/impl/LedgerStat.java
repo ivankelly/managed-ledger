@@ -24,12 +24,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.google.common.primitives.Longs;
-
 /**
  * LedgerStat holds a tuple of (LedgerId, EntriesCount, Size)
  */
-public class LedgerStat implements Comparable<LedgerStat> {
+public class LedgerStat {
     private final long ledgerId;
     private final long entriesCount;
     private final long size;
@@ -80,41 +78,6 @@ public class LedgerStat implements Comparable<LedgerStat> {
     @Override
     public String toString() {
         return String.format("(%d:%d:%d)", ledgerId, entriesCount, size);
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
-     * @see java.lang.Comparable#compareTo(java.lang.Object)
-     */
-    @Override
-    public int compareTo(LedgerStat other) {
-        return Longs.compare(this.ledgerId, other.ledgerId);
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
-     * @see java.lang.Object#hashCode()
-     */
-    @Override
-    public int hashCode() {
-        return Longs.hashCode(ledgerId);
-    }
-
-    /*
-     * (non-Javadoc)
-     * 
-     * @see java.lang.Object#equals(java.lang.Object)
-     */
-    @Override
-    public boolean equals(Object obj) {
-        if (obj instanceof LedgerStat) {
-            LedgerStat other = (LedgerStat) obj;
-            return this.ledgerId == other.ledgerId;
-        }
-
-        return false;
     }
 
 }

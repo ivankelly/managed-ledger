@@ -15,8 +15,6 @@
  */
 package com.yahoo.messaging.bookkeeper.ledger.util;
 
-import com.google.common.base.Objects;
-
 public class Pair<A, B> {
     public final A first;
     public final B second;
@@ -28,16 +26,6 @@ public class Pair<A, B> {
     public Pair(A first, B second) {
         this.first = first;
         this.second = second;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hashCode(first, second);
-    }
-
-    @Override
-    public String toString() {
-        return String.format("(%s,%s)", first, second);
     }
 
 }

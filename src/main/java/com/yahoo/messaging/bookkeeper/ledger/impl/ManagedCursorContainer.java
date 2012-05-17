@@ -196,7 +196,7 @@ public class ManagedCursorContainer {
     private void swapWithPrevious(Node node) {
         Node previous = node.previous;
         node.previous = previous.previous;
-        if (previous != null && previous.previous != null)
+        if (previous.previous != null)
             previous.previous.next = node;
         previous.previous = node;
 
