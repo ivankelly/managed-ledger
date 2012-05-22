@@ -24,6 +24,7 @@ import static org.testng.Assert.fail;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 
@@ -458,6 +459,32 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         }, null);
 
         barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void doubleAsyncAddEntryWithoutError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+
+        final CountDownLatch done = new CountDownLatch(10);
+
+        for (int i = 0; i < 10; i++) {
+            final String content = "dummy-entry-" + i;
+            ledger.asyncAddEntry(content.getBytes(Encoding), new AddEntryCallback() {
+                public void addComplete(Throwable status, Object ctx) {
+                    assertNotNull(ctx);
+                    assertNull(status);
+
+                    log.info("Successfully added {}", content);
+                    done.countDown();
+                }
+            }, this);
+        }
+
+        done.await();
+        assertEquals(ledger.getNumberOfEntries(), 10);
     }
 
     @Test(timeOut = 3000)
