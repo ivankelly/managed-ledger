@@ -70,11 +70,13 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private long totalSize;
 
     private final Executor executor;
+    private final ManagedLedgerFactoryImpl factory;
 
     // //////////////////////////////////////////////////////////////////////
 
-    public ManagedLedgerImpl(BookKeeper bookKeeper, MetaStore store, ManagedLedgerConfig config, Executor executor,
-            final String name) throws Exception {
+    public ManagedLedgerImpl(ManagedLedgerFactoryImpl factory, BookKeeper bookKeeper, MetaStore store,
+            ManagedLedgerConfig config, Executor executor, final String name) throws Exception {
+        this.factory = factory;
         this.bookKeeper = bookKeeper;
         this.config = config;
         this.store = store;
@@ -289,6 +291,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         ledgerCache.invalidateAll();
         log.info("Invalidated {} ledgers in cache", ledgerCache.size());
+        factory.close(this);
     }
 
     /*

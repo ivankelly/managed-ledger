@@ -15,6 +15,7 @@
  */
 package com.yahoo.messaging.bookkeeper.ledger.impl;
 
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,6 +24,7 @@ import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.Maps;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.DeleteLedgerCallback;
 import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.OpenLedgerCallback;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
@@ -33,6 +35,8 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     private final MetaStore store;
     private final BookKeeper bookKeeper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    private final ConcurrentMap<String, ManagedLedger> ledgers = Maps.newConcurrentMap();
 
     public ManagedLedgerFactoryImpl(BookKeeper bookKeeper, ZooKeeper zooKeeper) throws Exception {
         this.bookKeeper = bookKeeper;
@@ -60,7 +64,13 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      */
     @Override
     public ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception {
-        return new ManagedLedgerImpl(bookKeeper, store, config, executor, name);
+        ManagedLedger ledger = ledgers.get(name);
+        if (ledger != null) {
+            log.info("Reusing opened ManagedLedger: {}", name);
+            return ledger;
+        } else {
+            return new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
+        }
     }
 
     /*
@@ -138,6 +148,11 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
                 }
             }
         });
+    }
+
+    protected void close(ManagedLedger ledger) {
+        // Remove the ledger from the internal factory cache
+        ledgers.remove(ledger.getName());
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerFactoryImpl.class);
