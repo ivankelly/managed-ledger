@@ -78,8 +78,8 @@ public class Position implements Comparable<Position> {
     public int compareTo(Position other) {
         checkNotNull(other);
 
-        return ComparisonChain.start().compare(this.ledgerId, other.ledgerId)
-                .compare(this.entryId, other.entryId).result();
+        return ComparisonChain.start().compare(this.ledgerId, other.ledgerId).compare(this.entryId, other.entryId)
+                .result();
     }
 
     /*

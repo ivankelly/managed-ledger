@@ -85,8 +85,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (java.lang.String, java.lang.Iterable)
      */
     @Override
-    public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds)
-            throws Exception {
+    public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws Exception {
         StringBuilder sb = new StringBuilder();
         for (LedgerStat item : ledgerIds)
             sb.append(item).append(' ');
@@ -96,8 +95,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
         } catch (NoNodeException e) {
             log.info("Creating '{}' Content='{}'", prefix + ledgerName,
                     Arrays.toString(sb.toString().getBytes(Encoding)));
-            zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl,
-                    CreateMode.PERSISTENT);
+            zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
 
         }
     }
@@ -132,17 +130,14 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * com.yahoo.messaging.bookkeeper.ledger.Position)
      */
     @Override
-    public void updateConsumer(String ledgerName, String consumerName, Position position)
-            throws Exception {
-        log.trace("[{}] Updating position consumer={} new_position={}",
-                va(ledgerName, consumerName, position));
+    public void updateConsumer(String ledgerName, String consumerName, Position position) throws Exception {
+        log.trace("[{}] Updating position consumer={} new_position={}", va(ledgerName, consumerName, position));
 
         try {
-            zk.setData(prefix + ledgerName + "/" + consumerName,
-                    position.toString().getBytes(Encoding), -1);
+            zk.setData(prefix + ledgerName + "/" + consumerName, position.toString().getBytes(Encoding), -1);
         } catch (NoNodeException e) {
-            zk.create(prefix + ledgerName + "/" + consumerName,
-                    position.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
+            zk.create(prefix + ledgerName + "/" + consumerName, position.toString().getBytes(Encoding), Acl,
+                    CreateMode.PERSISTENT);
         }
     }
 

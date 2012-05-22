@@ -27,8 +27,7 @@ import org.apache.zookeeper.ZooKeeper;
  * in the public API.
  */
 public class BookKeeperTestClient extends BookKeeper {
-    public BookKeeperTestClient(ClientConfiguration conf) throws IOException, InterruptedException,
-            KeeperException {
+    public BookKeeperTestClient(ClientConfiguration conf) throws IOException, InterruptedException, KeeperException {
         super(conf);
     }
 

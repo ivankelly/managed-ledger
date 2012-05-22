@@ -50,8 +50,7 @@ public class ManagedCursorContainerTest {
         }
 
         @Override
-        public void asyncReadEntries(int numberOfEntriesToRead, ReadEntriesCallback callback,
-                Object ctx) {
+        public void asyncReadEntries(int numberOfEntriesToRead, ReadEntriesCallback callback, Object ctx) {
             callback.readEntriesComplete(null, null, ctx);
         }
 
@@ -102,6 +101,8 @@ public class ManagedCursorContainerTest {
         ManagedCursor cursor3 = new MockManagedCursor(container, "test3", new Position(2, 0));
         container.add(cursor3);
         assertEquals(container.getSlowestReaderPosition(), new Position(2, 2));
+        
+        assertEquals(container.toString(), "[test2=2:2, test3=2:0, test1=5:5]");
 
         ManagedCursor cursor4 = new MockManagedCursor(container, "test4", new Position(4, 0));
         container.add(cursor4);
@@ -130,6 +131,8 @@ public class ManagedCursorContainerTest {
         ManagedCursor cursor6 = new MockManagedCursor(container, "test6", new Position(6, 5));
         container.add(cursor6);
         assertEquals(container.getSlowestReaderPosition(), new Position(6, 5));
+
+        assertEquals(container.toString(), "[test6=6:5]");
     }
 
 }

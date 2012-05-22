@@ -36,8 +36,6 @@ import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 
-
-
 /**
  * A class runs several bookie servers for testing.
  */
@@ -65,7 +63,7 @@ public abstract class BookKeeperClusterTestCase {
         // By default start a 3 bookies cluster
         this(3);
     }
-    
+
     public BookKeeperClusterTestCase(int numBookies) {
         this.numBookies = numBookies;
     }
@@ -148,8 +146,7 @@ public abstract class BookKeeperClusterTestCase {
         }
     }
 
-    protected ServerConfiguration newServerConfiguration(int port, String zkServers,
-            File journalDir, File[] ledgerDirs) {
+    protected ServerConfiguration newServerConfiguration(int port, String zkServers, File journalDir, File[] ledgerDirs) {
         ServerConfiguration conf = new ServerConfiguration(baseConf);
         conf.setBookiePort(port);
         conf.setZkServers(zkServers);
@@ -254,8 +251,7 @@ public abstract class BookKeeperClusterTestCase {
      * @throws KeeperException
      * @throws BookieException
      */
-    public void restartBookies() throws InterruptedException, IOException, KeeperException,
-            BookieException {
+    public void restartBookies() throws InterruptedException, IOException, KeeperException, BookieException {
         restartBookies(null);
     }
 
@@ -269,8 +265,8 @@ public abstract class BookKeeperClusterTestCase {
      * @throws KeeperException
      * @throws BookieException
      */
-    public void restartBookies(ServerConfiguration newConf) throws InterruptedException,
-            IOException, KeeperException, BookieException {
+    public void restartBookies(ServerConfiguration newConf) throws InterruptedException, IOException, KeeperException,
+            BookieException {
         // shut down bookie server
         for (BookieServer server : bs) {
             server.shutdown();
@@ -294,16 +290,14 @@ public abstract class BookKeeperClusterTestCase {
      *            Port to start the new bookie server on
      * @throws IOException
      */
-    public int startNewBookie() throws IOException, InterruptedException, KeeperException,
-            BookieException {
+    public int startNewBookie() throws IOException, InterruptedException, KeeperException, BookieException {
         File f = File.createTempFile("bookie", "test");
         tmpDirs.add(f);
         f.delete();
         f.mkdir();
 
         int port = nextPort++;
-        ServerConfiguration conf = newServerConfiguration(port, zkUtil.getZooKeeperConnectString(),
-                f, new File[] { f });
+        ServerConfiguration conf = newServerConfiguration(port, zkUtil.getZooKeeperConnectString(), f, new File[] { f });
         bsConfs.add(conf);
         bs.add(startBookie(conf));
 
@@ -317,15 +311,14 @@ public abstract class BookKeeperClusterTestCase {
      *            Server Configuration Object
      * 
      */
-    protected BookieServer startBookie(ServerConfiguration conf) throws IOException,
-            InterruptedException, KeeperException, BookieException {
+    protected BookieServer startBookie(ServerConfiguration conf) throws IOException, InterruptedException,
+            KeeperException, BookieException {
         BookieServer server = new BookieServer(conf);
         server.start();
 
         int port = conf.getBookiePort();
         while (bkc.getZkHandle().exists(
-                "/ledgers/available/" + InetAddress.getLocalHost().getHostAddress() + ":" + port,
-                false) == null) {
+                "/ledgers/available/" + InetAddress.getLocalHost().getHostAddress() + ":" + port, false) == null) {
             Thread.sleep(50);
         }
 

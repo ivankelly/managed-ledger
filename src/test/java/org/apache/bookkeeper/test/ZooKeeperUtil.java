@@ -75,8 +75,7 @@ public class ZooKeeperUtil {
         serverFactory.configure(zkaddr, 100);
         serverFactory.startup(zks);
 
-        boolean b = ClientBase.waitForServerUp(getZooKeeperConnectString(),
-                ClientBase.CONNECTION_TIMEOUT);
+        boolean b = ClientBase.waitForServerUp(getZooKeeperConnectString(), ClientBase.CONNECTION_TIMEOUT);
         LOG.debug("Server up: " + b);
 
         // create a zookeeper client
@@ -109,8 +108,8 @@ public class ZooKeeperUtil {
         // shutdown ZK server
         if (serverFactory != null) {
             serverFactory.shutdown();
-            assertTrue(ClientBase.waitForServerDown(getZooKeeperConnectString(),
-                    ClientBase.CONNECTION_TIMEOUT), "waiting for server down");
+            assertTrue(ClientBase.waitForServerDown(getZooKeeperConnectString(), ClientBase.CONNECTION_TIMEOUT),
+                    "waiting for server down");
         }
         // ServerStats.unregister();
         FileUtils.deleteDirectory(ZkTmpDir);

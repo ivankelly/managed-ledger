@@ -24,6 +24,7 @@ import static org.testng.Assert.fail;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 
@@ -74,8 +75,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
             log.debug("Read {} entries", entries.size());
 
             for (Entry entry : entries) {
-                log.info("Read entry. Position={} Content='{}'", entry.getPosition(), new String(
-                        entry.getData()));
+                log.info("Read entry. Position={} Content='{}'", entry.getPosition(), new String(entry.getData()));
             }
 
             // Acknowledge only on last entry
@@ -201,8 +201,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                 assertNull(status);
 
                 ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
-                    public void openCursorComplete(Throwable status, ManagedCursor cursor,
-                            Object ctx) {
+                    public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
                         assertNull(status);
                         ManagedLedger ledger = (ManagedLedger) ctx;
 
@@ -216,12 +215,10 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                 ManagedCursor cursor = pair.second;
 
                                 assertEquals(ledger.getNumberOfEntries(), 1);
-                                assertEquals(ledger.getTotalSize(),
-                                        "test".getBytes(Encoding).length);
+                                assertEquals(ledger.getTotalSize(), "test".getBytes(Encoding).length);
 
                                 cursor.asyncReadEntries(2, new ReadEntriesCallback() {
-                                    public void readEntriesComplete(Throwable status,
-                                            List<Entry> entries, Object ctx) {
+                                    public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
                                         assertNull(status);
                                         ManagedCursor cursor = (ManagedCursor) ctx;
 
@@ -229,22 +226,20 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                         Entry entry = entries.get(0);
                                         assertEquals(new String(entry.getData(), Encoding), "test");
 
-                                        cursor.asyncMarkDelete(entry.getPosition(),
-                                                new MarkDeleteCallback() {
-                                                    public void markDeleteComplete(
-                                                            Throwable status, Object ctx) {
-                                                        assertNull(status);
-                                                        ManagedCursor cursor = (ManagedCursor) ctx;
+                                        cursor.asyncMarkDelete(entry.getPosition(), new MarkDeleteCallback() {
+                                            public void markDeleteComplete(Throwable status, Object ctx) {
+                                                assertNull(status);
+                                                ManagedCursor cursor = (ManagedCursor) ctx;
 
-                                                        assertEquals(cursor.hasMoreEntries(), false);
+                                                assertEquals(cursor.hasMoreEntries(), false);
 
-                                                        try {
-                                                            barrier.await();
-                                                        } catch (Exception e) {
-                                                            log.error("Error waiting for barrier");
-                                                        }
-                                                    }
-                                                }, cursor);
+                                                try {
+                                                    barrier.await();
+                                                } catch (Exception e) {
+                                                    log.error("Error waiting for barrier");
+                                                }
+                                            }
+                                        }, cursor);
                                     }
                                 }, cursor);
                             }
@@ -464,6 +459,32 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         }, null);
 
         barrier.await();
+    }
+
+    @Test(timeOut = 3000)
+    public void doubleAsyncAddEntryWithoutError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test-cursor");
+
+        final CountDownLatch done = new CountDownLatch(10);
+
+        for (int i = 0; i < 10; i++) {
+            final String content = "dummy-entry-" + i;
+            ledger.asyncAddEntry(content.getBytes(Encoding), new AddEntryCallback() {
+                public void addComplete(Throwable status, Object ctx) {
+                    assertNotNull(ctx);
+                    assertNull(status);
+
+                    log.info("Successfully added {}", content);
+                    done.countDown();
+                }
+            }, this);
+        }
+
+        done.await();
+        assertEquals(ledger.getNumberOfEntries(), 10);
     }
 
     @Test(timeOut = 3000)
