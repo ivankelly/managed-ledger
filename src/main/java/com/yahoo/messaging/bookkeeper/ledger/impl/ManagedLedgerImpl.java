@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.bookkeeper.client.AsyncCallback.AddCallback;
 import org.apache.bookkeeper.client.BKException;
@@ -67,8 +68,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
     private LedgerHandle lastLedger;
 
-    private long numberOfEntries;
-    private long totalSize;
+    private AtomicLong numberOfEntries = new AtomicLong(0);
+    private AtomicLong totalSize = new AtomicLong(0);
 
     private final Executor executor;
     private final ManagedLedgerFactoryImpl factory;
@@ -128,8 +129,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         // Calculate total entries and size
         for (LedgerStat ls : ledgers.values()) {
-            this.numberOfEntries += ls.getEntriesCount();
-            this.totalSize += ls.getSize();
+            this.numberOfEntries.addAndGet(ls.getEntriesCount());
+            this.totalSize.addAndGet(ls.getSize());
         }
     }
 
@@ -147,8 +148,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         if (isLedgerFull(lastLedger)) {
             // The last ledger has reached the limit of entries/size, so we
-            // force
-            // to close current ledger and start a new one
+            // force to close current ledger and start a new one
             lastLedger.close();
             log.info("[{}] Closing ledger {} for being full.", name, lastLedger.getId());
 
@@ -171,8 +171,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
 
         lastLedger.addEntry(data);
-        ++numberOfEntries;
-        totalSize += data.length;
+        numberOfEntries.incrementAndGet();
+        totalSize.addAndGet(data.length);
     }
 
     /*
@@ -198,10 +198,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
                             exception = BKException.create(rc);
                         } else {
                             ManagedLedgerImpl ml = (ManagedLedgerImpl) mlCtx;
-                            synchronized (ml) {
-                                ++ml.numberOfEntries;
-                                ml.totalSize += data.length;
-                            }
+                            ml.numberOfEntries.incrementAndGet();
+                            ml.totalSize.addAndGet(data.length);
                         }
                         callback.addComplete(exception, ctx);
                     }
@@ -295,7 +293,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      */
     @Override
     public long getNumberOfEntries() {
-        return numberOfEntries;
+        return numberOfEntries.get();
     }
 
     /*
@@ -305,7 +303,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      */
     @Override
     public long getTotalSize() {
-        return totalSize;
+        return totalSize.get();
     }
 
     /*
@@ -483,8 +481,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
             synchronized (this) {
                 ledgers.remove(ledgerToDelete.getLedgerId());
-                numberOfEntries -= ledgerToDelete.getEntriesCount();
-                totalSize -= ledgerToDelete.getSize();
+                numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
+                totalSize.addAndGet(-ledgerToDelete.getSize());
             }
         }
     }

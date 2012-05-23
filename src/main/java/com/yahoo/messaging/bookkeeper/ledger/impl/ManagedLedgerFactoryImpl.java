@@ -155,5 +155,9 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
         ledgers.remove(ledger.getName());
     }
 
+    public void shutdown() {
+        executor.shutdown();
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerFactoryImpl.class);
 }
