@@ -95,7 +95,8 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void simple() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        String zookeeperQuorum = bkc.getConf().getZkServers();
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
 
         ManagedLedger ledger = factory.open("my_test_ledger");
 
