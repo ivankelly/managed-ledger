@@ -143,7 +143,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * 
      * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#addEntry(byte[])
      */
-    public synchronized void addEntry(byte[] data) throws Exception {
+    public synchronized Position addEntry(byte[] data) throws Exception {
         log.debug("Adding entry");
 
         if (isLedgerFull(lastLedger)) {
@@ -173,6 +173,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         lastLedger.addEntry(data);
         numberOfEntries.incrementAndGet();
         totalSize.addAndGet(data.length);
+        return new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed());
     }
 
     /*
@@ -201,7 +202,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
                             ml.numberOfEntries.incrementAndGet();
                             ml.totalSize.addAndGet(data.length);
                         }
-                        callback.addComplete(exception, ctx);
+
+                        Position position = new Position(lh.getId(), entryId);
+                        callback.addComplete(exception, position, ctx);
                     }
                 }, this);
 
@@ -215,11 +218,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
         executor.execute(new Runnable() {
             public void run() {
                 try {
-                    addEntry(data);
-                    callback.addComplete(null, ctx);
+                    Position position = addEntry(data);
+                    callback.addComplete(null, position, ctx);
                 } catch (Exception e) {
                     log.warn("Got exception when adding entry: {}", e);
-                    callback.addComplete(e, ctx);
+                    callback.addComplete(e, null, ctx);
                 }
             }
         });
