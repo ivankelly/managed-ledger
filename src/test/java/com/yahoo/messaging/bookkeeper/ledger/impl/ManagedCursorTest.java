@@ -35,11 +35,36 @@ import com.yahoo.messaging.bookkeeper.ledger.AsyncCallbacks.ReadEntriesCallback;
 import com.yahoo.messaging.bookkeeper.ledger.Entry;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
+import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerFactory;
 
 public class ManagedCursorTest extends BookKeeperClusterTestCase {
 
     private static final Charset Encoding = Charsets.UTF_8;
+
+    @Test
+    void testNumberOfEntries() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
+
+        ManagedCursor c1 = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ManagedCursor c2 = ledger.openCursor("c2");
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ManagedCursor c3 = ledger.openCursor("c3");
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        ManagedCursor c4 = ledger.openCursor("c4");
+
+        assertEquals(c1.getNumberOfEntries(), 3);
+        assertEquals(c2.getNumberOfEntries(), 2);
+        assertEquals(c3.getNumberOfEntries(), 1);
+        assertEquals(c4.getNumberOfEntries(), 0);
+
+        List<Entry> entries = c1.readEntries(2);
+        assertEquals(entries.size(), 2);
+        c1.markDelete(entries.get(1).getPosition());
+        assertEquals(c1.getNumberOfEntries(), 1);
+    }
 
     @Test(timeOut = 3000)
     void asyncReadWithoutErrors() throws Exception {

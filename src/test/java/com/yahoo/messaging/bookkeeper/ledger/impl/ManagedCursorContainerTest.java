@@ -60,6 +60,11 @@ public class ManagedCursorContainerTest {
         }
 
         @Override
+        public long getNumberOfEntries() {
+            return 0;
+        }
+
+        @Override
         public void markDelete(Position position) throws Exception {
             this.position = position;
             container.cursorUpdated(this);
@@ -101,7 +106,7 @@ public class ManagedCursorContainerTest {
         ManagedCursor cursor3 = new MockManagedCursor(container, "test3", new Position(2, 0));
         container.add(cursor3);
         assertEquals(container.getSlowestReaderPosition(), new Position(2, 2));
-        
+
         assertEquals(container.toString(), "[test2=2:2, test3=2:0, test1=5:5]");
 
         ManagedCursor cursor4 = new MockManagedCursor(container, "test4", new Position(4, 0));

@@ -119,6 +119,17 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getNumberOfEntries()
+     */
+    @Override
+    public long getNumberOfEntries() {
+        return ledger.getNumberOfEntries(readPosition.get());
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
      * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#acknowledge(Position)
      */
     @Override

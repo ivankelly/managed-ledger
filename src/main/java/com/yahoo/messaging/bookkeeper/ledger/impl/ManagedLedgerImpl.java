@@ -508,6 +508,25 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
     }
 
+    protected synchronized long getNumberOfEntries(Position position) {
+        long count = 0;
+        // First count the number of unread entries in the ledger pointed by
+        // position
+        if (position.getLedgerId() >= 0)
+            count += ledgers.get(position.getLedgerId()).getEntriesCount() - position.getEntryId();
+
+        // Then, recur all the next ledgers and sum all the entries they contain
+        for (LedgerStat ls : ledgers.tailMap(position.getLedgerId(), false).values()) {
+            count += ls.getEntriesCount();
+        }
+
+        // Last add the entries in the current ledger
+        if (lastLedger != null)
+            count += lastLedger.getLastAddConfirmed() + 1;
+
+        return count;
+    }
+
     private boolean isLedgerFull(LedgerHandle ledger) {
         return ledger != null && //
                 (ledger.getLastAddConfirmed() >= config.getMaxEntriesPerLedger() - 1 //
