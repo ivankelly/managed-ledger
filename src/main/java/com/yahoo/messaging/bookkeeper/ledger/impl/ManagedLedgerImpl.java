@@ -143,7 +143,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * 
      * @see com.yahoo.messaging.bookkeeper.ledger.ManagedLedger#addEntry(byte[])
      */
-    public synchronized void addEntry(byte[] data) throws Exception {
+    public synchronized Position addEntry(byte[] data) throws Exception {
         log.debug("Adding entry");
 
         if (isLedgerFull(lastLedger)) {
@@ -173,6 +173,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         lastLedger.addEntry(data);
         numberOfEntries.incrementAndGet();
         totalSize.addAndGet(data.length);
+        return new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed());
     }
 
     /*
@@ -201,7 +202,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
                             ml.numberOfEntries.incrementAndGet();
                             ml.totalSize.addAndGet(data.length);
                         }
-                        callback.addComplete(exception, ctx);
+
+                        Position position = new Position(lh.getId(), entryId);
+                        callback.addComplete(exception, position, ctx);
                     }
                 }, this);
 
@@ -215,11 +218,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
         executor.execute(new Runnable() {
             public void run() {
                 try {
-                    addEntry(data);
-                    callback.addComplete(null, ctx);
+                    Position position = addEntry(data);
+                    callback.addComplete(null, position, ctx);
                 } catch (Exception e) {
                     log.warn("Got exception when adding entry: {}", e);
-                    callback.addComplete(e, ctx);
+                    callback.addComplete(e, null, ctx);
                 }
             }
         });
@@ -361,6 +364,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         synchronized (this) {
             if (position.getLedgerId() == -1) {
+                if (ledgers.isEmpty()) {
+                    // The ManagedLedger is completely empty
+                    return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+                }
+
                 position = new Position(ledgers.firstKey(), 0);
             }
 
@@ -503,6 +511,25 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
             store.removeManagedLedger(name);
         }
+    }
+
+    protected synchronized long getNumberOfEntries(Position position) {
+        long count = 0;
+        // First count the number of unread entries in the ledger pointed by
+        // position
+        if (position.getLedgerId() >= 0)
+            count += ledgers.get(position.getLedgerId()).getEntriesCount() - position.getEntryId();
+
+        // Then, recur all the next ledgers and sum all the entries they contain
+        for (LedgerStat ls : ledgers.tailMap(position.getLedgerId(), false).values()) {
+            count += ls.getEntriesCount();
+        }
+
+        // Last add the entries in the current ledger
+        if (lastLedger != null)
+            count += lastLedger.getLastAddConfirmed() + 1;
+
+        return count;
     }
 
     private boolean isLedgerFull(LedgerHandle ledger) {

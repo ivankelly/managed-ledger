@@ -29,6 +29,9 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.ZooDefs;
+import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.Test;
@@ -92,7 +95,8 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void simple() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        String zookeeperQuorum = bkc.getConf().getZkServers();
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
 
         ManagedLedger ledger = factory.open("my_test_ledger");
 
@@ -206,7 +210,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                         ManagedLedger ledger = (ManagedLedger) ctx;
 
                         ledger.asyncAddEntry("test".getBytes(Encoding), new AddEntryCallback() {
-                            public void addComplete(Throwable status, Object ctx) {
+                            public void addComplete(Throwable status, Position position, Object ctx) {
                                 assertNull(status);
 
                                 @SuppressWarnings("unchecked")
@@ -446,7 +450,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
         ledger.asyncAddEntry("dummy-entry-1".getBytes(Encoding), new AddEntryCallback() {
-            public void addComplete(Throwable status, Object ctx) {
+            public void addComplete(Throwable status, Position position, Object ctx) {
                 assertNull(ctx);
                 assertNull(status);
 
@@ -473,7 +477,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         for (int i = 0; i < 10; i++) {
             final String content = "dummy-entry-" + i;
             ledger.asyncAddEntry(content.getBytes(Encoding), new AddEntryCallback() {
-                public void addComplete(Throwable status, Object ctx) {
+                public void addComplete(Throwable status, Position position, Object ctx) {
                     assertNotNull(ctx);
                     assertNull(status);
 
@@ -499,8 +503,9 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         stopZKCluster();
 
         ledger.asyncAddEntry("dummy-entry-1".getBytes(Encoding), new AddEntryCallback() {
-            public void addComplete(Throwable status, Object ctx) {
+            public void addComplete(Throwable status, Position position, Object ctx) {
                 assertNull(ctx);
+                assertNull(position);
                 assertNotNull(status);
 
                 try {
@@ -681,6 +686,22 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
         cursor.readEntries(1);
         assertEquals(cursor.hasMoreEntries(), false);
+    }
+
+    @Test
+    public void testEmptyManagedLedgerContent() throws Exception {
+
+        ZooKeeper zk = bkc.getZkHandle();
+        zk.create("/managed-ledger", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zk.create("/managed-ledger/my_test_ledger", " ".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ledger.openCursor("test");
+
+        ledger.addEntry("entry-1".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+
     }
 
 }

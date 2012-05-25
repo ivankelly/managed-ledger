@@ -16,10 +16,13 @@
 package com.yahoo.messaging.bookkeeper.ledger.impl;
 
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.apache.bookkeeper.client.BookKeeper;
+import org.apache.zookeeper.WatchedEvent;
+import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +40,32 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private final ConcurrentMap<String, ManagedLedger> ledgers = Maps.newConcurrentMap();
+
+    public ManagedLedgerFactoryImpl(String zookeeperQuorum) throws Exception {
+        this(zookeeperQuorum, 32000);
+    }
+
+    public ManagedLedgerFactoryImpl(String zookeeperQuorum, int sessionTimeout) throws Exception {
+        this.bookKeeper = new BookKeeper(zookeeperQuorum);
+
+        final CountDownLatch counter = new CountDownLatch(1);
+
+        ZooKeeper zookeeper = new ZooKeeper(zookeeperQuorum, sessionTimeout, new Watcher() {
+            @Override
+            public void process(WatchedEvent event) {
+                if (event.getState().equals(Watcher.Event.KeeperState.SyncConnected)) {
+                    log.info("Connected to zookeeper");
+                    counter.countDown();
+                } else {
+                    log.error("Error connecting to zookeeper {}", event);
+                }
+            }
+        });
+
+        counter.await();
+
+        this.store = new MetaStoreImplZookeeper(zookeeper);
+    }
 
     public ManagedLedgerFactoryImpl(BookKeeper bookKeeper, ZooKeeper zooKeeper) throws Exception {
         this.bookKeeper = bookKeeper;
@@ -69,7 +98,12 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
             log.info("Reusing opened ManagedLedger: {}", name);
             return ledger;
         } else {
-            return new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
+            ledger = new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
+            ManagedLedger oldValue = ledgers.putIfAbsent(name, ledger);
+            if (oldValue != null)
+                return oldValue;
+            else
+                return ledger;
         }
     }
 

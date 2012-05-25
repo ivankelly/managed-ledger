@@ -69,6 +69,16 @@ public interface ManagedCursor {
     public boolean hasMoreEntries();
 
     /**
+     * Return the number of messages that this cursor still has to read.
+     * 
+     * This method has linear time complexity on the number of ledgers included
+     * in the managed ledger.
+     * 
+     * @return the number of entries
+     */
+    public long getNumberOfEntries();
+
+    /**
      * This signals that the reader is done with all the entries up to
      * "position" (included). This can potentially trigger a ledger deletion, if
      * all the other cursors are done too with the underlying ledger.

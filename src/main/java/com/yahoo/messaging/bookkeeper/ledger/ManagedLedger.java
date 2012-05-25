@@ -55,9 +55,10 @@ public interface ManagedLedger {
      * 
      * @param data
      *            data entry to be persisted
+     * @return the Position at which the entry has been inserted
      * @throws Exception
      */
-    public void addEntry(byte[] data) throws Exception;
+    public Position addEntry(byte[] data) throws Exception;
 
     /**
      * Append a new entry asynchronously

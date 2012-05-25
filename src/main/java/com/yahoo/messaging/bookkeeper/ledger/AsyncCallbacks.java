@@ -36,7 +36,7 @@ public interface AsyncCallbacks {
     }
 
     public interface AddEntryCallback {
-        public void addComplete(Throwable status, Object ctx);
+        public void addComplete(Throwable status, Position position, Object ctx);
     }
 
     public interface CloseCallback {

@@ -68,6 +68,9 @@ public class MetaStoreImplZookeeper implements MetaStore {
             return Lists.newArrayList();
         }
 
+        if (data.length == 0)
+            return Lists.newArrayList();
+
         String content = new String(data, Encoding);
         List<LedgerStat> ids = Lists.newArrayList();
         for (String ledgerData : content.split(" ")) {
