@@ -98,7 +98,12 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
             log.info("Reusing opened ManagedLedger: {}", name);
             return ledger;
         } else {
-            return new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
+            ledger = new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
+            ManagedLedger oldValue = ledgers.putIfAbsent(name, ledger);
+            if (oldValue != null)
+                return oldValue;
+            else
+                return ledger;
         }
     }
 
