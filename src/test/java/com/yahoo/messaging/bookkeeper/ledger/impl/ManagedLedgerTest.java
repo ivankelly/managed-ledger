@@ -690,7 +690,6 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     @Test
     public void testEmptyManagedLedgerContent() throws Exception {
-
         ZooKeeper zk = bkc.getZkHandle();
         zk.create("/managed-ledger", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
         zk.create("/managed-ledger/my_test_ledger", " ".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -701,7 +700,26 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
         ledger.addEntry("entry-1".getBytes(Encoding));
         assertEquals(ledger.getNumberOfEntries(), 1);
+    }
 
+    @Test
+    public void testProducerAndNoConsumer() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+
+        assertEquals(ledger.getNumberOfEntries(), 0);
+
+        ledger.addEntry("entry-1".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+
+        // Since there are no consumers, older ledger will be deleted
+        // immediately
+        ledger.addEntry("entry-2".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
+
+        ledger.addEntry("entry-3".getBytes(Encoding));
+        assertEquals(ledger.getNumberOfEntries(), 1);
     }
 
 }

@@ -50,7 +50,7 @@ public class ZooKeeperUtil {
 
     public ZooKeeperUtil() {
         zkaddr = new InetSocketAddress(ZooKeeperDefaultPort);
-        connectString = "localhost:" + ZooKeeperDefaultPort;
+        connectString = "127.0.0.1:" + ZooKeeperDefaultPort;
     }
 
     public ZooKeeper getZooKeeperClient() {

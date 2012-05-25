@@ -156,6 +156,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
             ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), lastLedger.getLastAddConfirmed() + 1,
                     lastLedger.getLength()));
 
+            trimConsumedLedgers();
+
             lastLedger = null;
         }
 
@@ -468,17 +470,34 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
     }
 
-    protected void updateCursor(ManagedCursorImpl cursor, Position newPosition) throws Exception {
+    protected synchronized void updateCursor(ManagedCursorImpl cursor, Position newPosition) throws Exception {
         // First update the metadata store, so that if we don't succeed we have
         // not changed any other state
         store.updateConsumer(name, cursor.getName(), newPosition);
         cursor.setAcknowledgedPosition(newPosition);
-
         cursors.cursorUpdated(cursor);
 
-        // Delete ledgers if needed
-        long slowestReaderPosition = cursors.getSlowestReaderPosition().getLedgerId();
-        while (!ledgers.isEmpty() && ledgers.firstKey() < slowestReaderPosition) {
+        trimConsumedLedgers();
+    }
+
+    /**
+     * Checks whether there are ledger that have been fully consumed and deletes
+     * them
+     * 
+     * @throws Exception
+     */
+    private void trimConsumedLedgers() throws Exception {
+        long slowestReaderLedgerId = -1;
+        if (cursors.isEmpty() && lastLedger != null) {
+            // At this point the lastLedger will be pointing to the ledger that
+            // has just been closed, therefore the +1 to include lastLedger in
+            // the trimming.
+            slowestReaderLedgerId = lastLedger.getId() + 1;
+        } else {
+            slowestReaderLedgerId = cursors.getSlowestReaderPosition().getLedgerId();
+        }
+
+        while (!ledgers.isEmpty() && ledgers.firstKey() < slowestReaderLedgerId) {
             // Delete ledger from BookKeeper
             LedgerStat ledgerToDelete = ledgers.firstEntry().getValue();
             log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
@@ -487,11 +506,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
             // Update metadata
             store.updateLedgersIds(name, ledgers.values());
 
-            synchronized (this) {
-                ledgers.remove(ledgerToDelete.getLedgerId());
-                numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
-                totalSize.addAndGet(-ledgerToDelete.getSize());
-            }
+            ledgers.remove(ledgerToDelete.getLedgerId());
+            numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
+            totalSize.addAndGet(-ledgerToDelete.getSize());
         }
     }
 
