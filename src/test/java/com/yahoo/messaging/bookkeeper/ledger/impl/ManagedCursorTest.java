@@ -43,6 +43,23 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
     private static final Charset Encoding = Charsets.UTF_8;
 
     @Test
+    void readFromEmptyLedger() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger");
+
+        ManagedCursor c1 = ledger.openCursor("c1");
+        List<Entry> entries = c1.readEntries(10);
+        assertEquals(entries.size(), 0);
+
+        ledger.addEntry("test".getBytes(Encoding));
+        entries = c1.readEntries(10);
+        assertEquals(entries.size(), 1);
+
+        entries = c1.readEntries(10);
+        assertEquals(entries.size(), 0);
+    }
+
+    @Test
     void testNumberOfEntries() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));

@@ -364,6 +364,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         synchronized (this) {
             if (position.getLedgerId() == -1) {
+                if (ledgers.isEmpty()) {
+                    // The ManagedLedger is completely empty
+                    return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+                }
+
                 position = new Position(ledgers.firstKey(), 0);
             }
 
