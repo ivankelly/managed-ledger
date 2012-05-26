@@ -722,4 +722,29 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 1);
     }
 
+    @Test
+    public void testAsyncAddEntryAndSyncClose() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(10);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+        ledger.openCursor("c1");
+
+        assertEquals(ledger.getNumberOfEntries(), 0);
+
+        final CountDownLatch counter = new CountDownLatch(100);
+
+        for (int i = 0; i < 100; i++) {
+            String content = "entry-" + i;
+            ledger.asyncAddEntry(content.getBytes(Encoding), new AddEntryCallback() {
+                public void addComplete(Throwable status, Position position, Object ctx) {
+                    counter.countDown();
+                }
+            }, null);
+        }
+
+        counter.await();
+
+        assertEquals(ledger.getNumberOfEntries(), 100);
+    }
+
 }

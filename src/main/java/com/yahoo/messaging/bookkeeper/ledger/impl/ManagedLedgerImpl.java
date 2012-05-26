@@ -71,6 +71,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private AtomicLong numberOfEntries = new AtomicLong(0);
     private AtomicLong totalSize = new AtomicLong(0);
 
+    private long lastLedgerEntries = 0;
+    private long lastLedgerSize = 0;
+
     private final Executor executor;
     private final ManagedLedgerFactoryImpl factory;
 
@@ -146,7 +149,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     public synchronized Position addEntry(byte[] data) throws Exception {
         log.debug("Adding entry");
 
-        if (isLedgerFull(lastLedger)) {
+        if (lastLedger != null && isLastLedgerFull()) {
             // The last ledger has reached the limit of entries/size, so we
             // force to close current ledger and start a new one
             lastLedger.close();
@@ -163,6 +166,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         if (lastLedger == null) {
             // We need to open a new ledger for writing
+            lastLedgerEntries = 0;
+            lastLedgerSize = 0;
             lastLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
                     config.getDigestType(), config.getPassword());
             ledgerCache.put(lastLedger.getId(), lastLedger);
@@ -175,6 +180,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
         lastLedger.addEntry(data);
         numberOfEntries.incrementAndGet();
         totalSize.addAndGet(data.length);
+        ++lastLedgerEntries;
+        lastLedgerSize += data.length;
         return new Position(lastLedger.getId(), lastLedger.getLastAddConfirmed());
     }
 
@@ -191,10 +198,22 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // If we can append to the last ledger, we do it in the async mode, else
         // we fallback to the background thread async.
         synchronized (this) {
-            if (lastLedger != null && !isLedgerFull(lastLedger)) {
+            if (lastLedger != null && !isLastLedgerFull()) {
                 log.debug("Using ledger.asyncAddEntry()");
+
+                // Update only last ledger stats. These stats are only used to
+                // decide when to close the current ledger and start a new one.
+                // In the case of a addEntry() failure, the worst-scenario is
+                // that we close the lastLedger earlier.
+                ++lastLedgerEntries;
+                lastLedgerSize += data.length;
+
+                // If the ledger would be full now,
+                final boolean needToCloseLedger = isLastLedgerFull();
+                final ManagedLedgerImpl ml = this;
+
                 lastLedger.asyncAddEntry(data, new AddCallback() {
-                    public void addComplete(int rc, LedgerHandle lh, long entryId, Object mlCtx) {
+                    public void addComplete(int rc, final LedgerHandle lh, long entryId, Object mlCtx) {
                         log.debug("addComplete: rc={} entryId={}", rc, entryId);
                         BKException exception = null;
                         if (rc != BKException.Code.OK) {
@@ -205,10 +224,34 @@ public class ManagedLedgerImpl implements ManagedLedger {
                             ml.totalSize.addAndGet(data.length);
                         }
 
+                        if (needToCloseLedger) {
+
+                            // Close the ledger in another thread
+                            executor.execute(new Runnable() {
+                                public void run() {
+                                    log.info("Closing ledger {} in a background thread", lh.getId());
+                                    try {
+                                        synchronized (ml) {
+                                            lh.close();
+                                            // Update LedgerStat instance
+                                            ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(),
+                                                    lastLedger.getLastAddConfirmed() + 1, lastLedger.getLength()));
+                                        }
+                                    } catch (Exception e) {
+                                        log.error("Error while closing ledger {}", lh.getId(), e);
+                                    }
+                                }
+                            });
+                        }
+
                         Position position = new Position(lh.getId(), entryId);
                         callback.addComplete(exception, position, ctx);
                     }
                 }, this);
+
+                if (needToCloseLedger) {
+                    lastLedger = null;
+                }
 
                 return;
             }
@@ -549,10 +592,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
         return count;
     }
 
-    private boolean isLedgerFull(LedgerHandle ledger) {
-        return ledger != null && //
-                (ledger.getLastAddConfirmed() >= config.getMaxEntriesPerLedger() - 1 //
-                || ledger.getLength() >= (config.getMaxSizePerLedgerMb() * MegaByte));
+    private boolean isLastLedgerFull() {
+        return lastLedgerEntries >= config.getMaxEntriesPerLedger() - 1
+                || lastLedgerSize >= (config.getMaxSizePerLedgerMb() * MegaByte);
     }
 
     Executor getExecutor() {
