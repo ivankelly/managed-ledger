@@ -207,6 +207,10 @@ public class ManagedCursorContainer {
             next.previous = previous;
     }
 
+    public boolean isEmpty() {
+        return cursorEntries.isEmpty();
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
