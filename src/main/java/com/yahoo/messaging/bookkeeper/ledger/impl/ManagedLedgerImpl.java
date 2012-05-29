@@ -593,7 +593,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     }
 
     private boolean isLastLedgerFull() {
-        return lastLedgerEntries >= config.getMaxEntriesPerLedger() - 1
+        return lastLedgerEntries >= config.getMaxEntriesPerLedger()
                 || lastLedgerSize >= (config.getMaxSizePerLedgerMb() * MegaByte);
     }
 
