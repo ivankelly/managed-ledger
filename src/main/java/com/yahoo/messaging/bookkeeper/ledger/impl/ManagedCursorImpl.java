@@ -196,12 +196,47 @@ class ManagedCursorImpl implements ManagedCursor {
      * (non-Javadoc)
      * 
      * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getReadPosition()
+     */
+    @Override
+    public Position getReadPosition() {
+        return readPosition.get();
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
      * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#getMarkDeletedPosition
      * ()
      */
     @Override
     public Position getMarkDeletedPosition() {
         return acknowledgedPosition.get();
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#skip(int)
+     */
+    @Override
+    public void skip(int messages) {
+        // TODO Auto-generated method stub
+        assert false;
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * com.yahoo.messaging.bookkeeper.ledger.ManagedCursor#seek(com.yahoo.messaging
+     * .bookkeeper.ledger.Position)
+     */
+    @Override
+    public void seek(Position newReadPosition) {
+        // TODO Auto-generated method stub
+        assert false;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorImpl.class);
