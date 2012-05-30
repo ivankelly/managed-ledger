@@ -549,6 +549,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
         while (!ledgers.isEmpty() && ledgers.firstKey() < slowestReaderLedgerId) {
             // Delete ledger from BookKeeper
             LedgerStat ledgerToDelete = ledgers.firstEntry().getValue();
+
+            ledgerCache.invalidate(ledgerToDelete.getLedgerId());
+
             log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
             bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
 
