@@ -747,4 +747,33 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 100);
     }
 
+    @Test
+    public void moveCursorToNextLedger() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
+        ManagedLedger ledger = factory.open("my_test_ledger", config);
+        ManagedCursor cursor = ledger.openCursor("test");
+
+        ledger.addEntry("entry-1".getBytes(Encoding));
+        List<Entry> entries = cursor.readEntries(1);
+        assertEquals(entries.size(), 1);
+
+        ledger.addEntry("entry-2".getBytes(Encoding));
+        ledger.addEntry("entry-3".getBytes(Encoding));
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        assertEquals(cursor.getNumberOfEntries(), 2);
+
+        entries = cursor.readEntries(2);
+        assertEquals(entries.size(), 0);
+
+        entries = cursor.readEntries(2);
+        assertEquals(entries.size(), 1);
+
+        entries = cursor.readEntries(2);
+        assertEquals(entries.size(), 1);
+
+        entries = cursor.readEntries(2);
+        assertEquals(entries.size(), 0);
+    }
 }
