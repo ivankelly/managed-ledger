@@ -37,6 +37,7 @@ import com.yahoo.messaging.bookkeeper.ledger.ManagedCursor;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedger;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerConfig;
 import com.yahoo.messaging.bookkeeper.ledger.ManagedLedgerFactory;
+import com.yahoo.messaging.bookkeeper.ledger.Position;
 
 public class ManagedCursorTest extends BookKeeperClusterTestCase {
 
@@ -169,6 +170,149 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         barrier.await();
 
         log.info("Cursor state: {}", cursor);
+    }
+
+    @Test
+    void skipEntries() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(1));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+
+        assertEquals(cursor.getNumberOfEntries(), 1);
+        cursor.skip(1);
+        assertEquals(cursor.getNumberOfEntries(), 0);
+
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+
+        assertEquals(cursor.getNumberOfEntries(), 3);
+        cursor.skip(2);
+        assertEquals(cursor.getNumberOfEntries(), 1);
+        List<Entry> entries = cursor.readEntries(10);
+        assertEquals(entries.size(), 1);
+    }
+
+    @Test
+    void skipEntries2() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-5".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-6".getBytes(Encoding));
+
+        cursor.readEntries(2);
+        cursor.skip(1);
+        assertEquals(cursor.getNumberOfEntries(), 3);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    void skipEntriesError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(1));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+
+        assertEquals(cursor.getNumberOfEntries(), 1);
+        cursor.skip(-1);
+    }
+
+    @Test
+    void seekPosition() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(10));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        Position lastPosition = ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+
+        cursor.seek(new Position(lastPosition.getLedgerId(), lastPosition.getEntryId() - 1));
+    }
+
+    @Test
+    void seekPosition2() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        Position seekPosition = ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-5".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-6".getBytes(Encoding));
+
+        cursor.seek(new Position(seekPosition.getLedgerId(), seekPosition.getEntryId()));
+    }
+
+    @Test
+    void seekPosition3() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        Position seekPosition = ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-5".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-6".getBytes(Encoding));
+
+        cursor.seek(new Position(seekPosition.getLedgerId(), seekPosition.getEntryId()));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    void seekPositionEmpty() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
+        ManagedCursor cursor = ledger.openCursor("c1");
+
+        Position currentPosition = cursor.getReadPosition();
+        cursor.seek(currentPosition);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    void seekPositionWithError() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(1));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+
+        Position p = cursor.getReadPosition();
+        List<Entry> entries = cursor.readEntries(1);
+        assertEquals(entries.size(), 1);
+        cursor.markDelete(entries.get(0).getPosition());
+        cursor.seek(p);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    void seekPositionWithError2() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger");
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+
+        Position p = cursor.getReadPosition();
+        cursor.seek(new Position(p.getLedgerId(), 2));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    void seekPositionWithError3() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(10));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        Position lastPosition = ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+
+        cursor.seek(new Position(lastPosition.getLedgerId(), lastPosition.getEntryId() + 1));
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorTest.class);

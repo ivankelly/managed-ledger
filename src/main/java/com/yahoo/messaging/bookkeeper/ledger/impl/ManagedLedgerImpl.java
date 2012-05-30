@@ -601,6 +601,65 @@ public class ManagedLedgerImpl implements ManagedLedger {
         return count;
     }
 
+    /**
+     * Skip a specified number of entries and return the resulting position.
+     * 
+     * @param startPosition
+     *            the current position
+     * @param entriesToSkip
+     *            the numbers of entries to skip
+     * @return the new position
+     */
+    protected synchronized Position skipEntries(Position startPosition, int entriesToSkip) {
+        long ledgerId = startPosition.getLedgerId();
+        entriesToSkip += startPosition.getEntryId();
+
+        while (entriesToSkip > 0) {
+            if (lastLedger != null && ledgerId == lastLedger.getId()) {
+                checkArgument(entriesToSkip <= (lastLedger.getLastAddConfirmed() + 1));
+                return new Position(ledgerId, entriesToSkip);
+            } else {
+                LedgerStat ledger = ledgers.get(ledgerId);
+                if (ledger == null) {
+                    checkArgument(!ledgers.isEmpty());
+                    ledgerId = ledgers.ceilingKey(ledgerId);
+                    continue;
+                }
+
+                if (entriesToSkip < ledger.getEntriesCount()) {
+                    return new Position(ledgerId, entriesToSkip);
+                } else {
+                    // Move to next ledger
+                    entriesToSkip -= ledger.getEntriesCount();
+                    ledgerId = ledgers.ceilingKey(ledgerId + 1);
+                }
+            }
+        }
+
+        return new Position(ledgerId, 0);
+    }
+
+    /**
+     * Validate whether a specified position is valid for the current managed
+     * ledger.
+     * 
+     * @param position
+     *            the position to validate
+     * @return true if the position is valid, false otherwise
+     */
+    protected synchronized boolean isValidPosition(Position position) {
+        if (lastLedger != null && position.getLedgerId() == lastLedger.getId()) {
+            return position.getEntryId() <= lastLedger.getLastAddConfirmed();
+        } else {
+            // Look in the ledgers map
+            LedgerStat ls = ledgers.get(position.getLedgerId());
+            if (ls == null)
+                return false;
+
+            return position.getEntryId() < ls.getEntriesCount();
+        }
+    }
+
     private boolean isLastLedgerFull() {
         return lastLedgerEntries >= config.getMaxEntriesPerLedger()
                 || lastLedgerSize >= (config.getMaxSizePerLedgerMb() * MegaByte);
