@@ -103,9 +103,39 @@ public interface ManagedCursor {
     public void asyncMarkDelete(Position position, MarkDeleteCallback callback, Object ctx);
 
     /**
+     * Get the read position. This points to the next message to be read from
+     * the cursor.
+     * 
+     * @return the read position
+     */
+    public Position getReadPosition();
+
+    /**
      * Get the newest mark deleted position on this cursor.
      * 
      * @return the mark deleted position
      */
     public Position getMarkDeletedPosition();
+
+    /**
+     * Advance the read position by n entries.
+     * 
+     * The number of entries to be skipped must be less/equal than the total
+     * number of entries for this cursor.
+     * 
+     * @param n
+     *            the number of messages the cursor has to skip
+     */
+    public void skip(int n);
+
+    /**
+     * Move the cursor to a different read position.
+     * 
+     * The new position cannot be before the already mark deleted position and
+     * cannot be past the last written entry in the ManagedLedger.
+     * 
+     * @param newReadPosition
+     *            the position where to move the cursor
+     */
+    public void seek(Position newReadPosition);
 }

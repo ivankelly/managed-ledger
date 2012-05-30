@@ -234,8 +234,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
                                         synchronized (ml) {
                                             lh.close();
                                             // Update LedgerStat instance
-                                            ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(),
-                                                    lastLedger.getLastAddConfirmed() + 1, lastLedger.getLength()));
+                                            ledgers.put(lh.getId(), new LedgerStat(lh.getId(),
+                                                    lh.getLastAddConfirmed() + 1, lh.getLength()));
                                         }
                                     } catch (Exception e) {
                                         log.error("Error while closing ledger {}", lh.getId(), e);
@@ -402,23 +402,21 @@ public class ManagedLedgerImpl implements ManagedLedger {
     // //////////////////////////////////////////////////////////////////////
     // Private helpers
 
-    protected Pair<List<Entry>, Position> readEntries(Position position, int count) throws Exception {
+    protected synchronized Pair<List<Entry>, Position> readEntries(Position position, int count) throws Exception {
 
         LedgerHandle ledger = null;
         LedgerHandle last = null;
 
-        synchronized (this) {
-            if (position.getLedgerId() == -1) {
-                if (ledgers.isEmpty()) {
-                    // The ManagedLedger is completely empty
-                    return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
-                }
-
-                position = new Position(ledgers.firstKey(), 0);
+        if (position.getLedgerId() == -1) {
+            if (ledgers.isEmpty()) {
+                // The ManagedLedger is completely empty
+                return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
             }
 
-            last = lastLedger;
+            position = new Position(ledgers.firstKey(), 0);
         }
+
+        last = lastLedger;
 
         long id = position.getLedgerId();
 
@@ -448,7 +446,15 @@ public class ManagedLedgerImpl implements ManagedLedger {
         if (firstEntry > ledger.getLastAddConfirmed()) {
             log.debug("[{}] No more messages to read from ledger={} lastEntry={} readEntry={}",
                     va(name, ledger.getId(), ledger.getLastAddConfirmed(), firstEntry));
-            return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+            if (lastLedger != null && ledger.getId() != lastLedger.getId()) {
+                // Cursor was placed past the end of one ledger, move it to the
+                // beginning of the next ledger
+                Long nextLedgerId = ledgers.ceilingKey(ledger.getId() + 1);
+                return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), new Position(nextLedgerId, 0));
+            } else {
+                // We reached the end of the entries stream
+                return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+            }
         }
 
         long lastEntry = min(firstEntry + count - 1, ledger.getLastAddConfirmed());
@@ -543,6 +549,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
         while (!ledgers.isEmpty() && ledgers.firstKey() < slowestReaderLedgerId) {
             // Delete ledger from BookKeeper
             LedgerStat ledgerToDelete = ledgers.firstEntry().getValue();
+
+            ledgerCache.invalidate(ledgerToDelete.getLedgerId());
+
             log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
             bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
 
@@ -593,7 +602,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     }
 
     private boolean isLastLedgerFull() {
-        return lastLedgerEntries >= config.getMaxEntriesPerLedger() - 1
+        return lastLedgerEntries >= config.getMaxEntriesPerLedger()
                 || lastLedgerSize >= (config.getMaxSizePerLedgerMb() * MegaByte);
     }
 

@@ -88,6 +88,20 @@ public class ManagedCursorContainerTest {
         public String toString() {
             return String.format("%s=%s", name, position);
         }
+
+        @Override
+        public Position getReadPosition() {
+            return null;
+        }
+
+        @Override
+        public void skip(int messages) {
+        }
+
+        @Override
+        public void seek(Position newReadPosition) {
+        }
+
     }
 
     @Test
