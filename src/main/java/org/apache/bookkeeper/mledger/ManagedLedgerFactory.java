@@ -96,4 +96,11 @@ public interface ManagedLedgerFactory {
      *            opaque context
      */
     public void asyncDelete(String name, DeleteLedgerCallback callback, Object ctx);
+
+    /**
+     * Releases all the resources maintained by the ManagedLedgerFactory
+     * 
+     * @throws Exception
+     */
+    public void shutdown() throws Exception;
 }

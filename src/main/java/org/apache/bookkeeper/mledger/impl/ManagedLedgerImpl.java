@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.bookkeeper.client.AsyncCallback.AddCallback;
@@ -69,6 +70,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     private AtomicLong numberOfEntries = new AtomicLong(0);
     private AtomicLong totalSize = new AtomicLong(0);
 
+    private AtomicBoolean lastLedgerIsTainted = new AtomicBoolean(false);
     private long lastLedgerEntries = 0;
     private long lastLedgerSize = 0;
 
@@ -101,7 +103,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
         };
         this.ledgerCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS)
                 .removalListener(removalListener).build();
+    }
 
+    protected synchronized void initialize() throws Exception {
         log.info("Opening managed ledger {}", name);
 
         // Fetch the list of existing ledgers in the managed ledger
@@ -135,6 +139,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
     }
 
+    @Override
     public String getName() {
         return name;
     }
@@ -147,11 +152,17 @@ public class ManagedLedgerImpl implements ManagedLedger {
     public synchronized Position addEntry(byte[] data) throws Exception {
         log.debug("Adding entry");
 
-        if (lastLedger != null && isLastLedgerFull()) {
-            // The last ledger has reached the limit of entries/size, so we
-            // force to close current ledger and start a new one
-            lastLedger.close();
-            log.info("[{}] Closing ledger {} for being full.", name, lastLedger.getId());
+        if (lastLedger != null && (isLastLedgerFull() || lastLedgerIsTainted.get())) {
+            if (lastLedgerIsTainted.get()) {
+                // Previously some addEntry() call failed on the lastLedger so
+                // we need to force to use a new ledger
+                log.info("[{}] Closing ledger {} for being tainted.", name, lastLedger.getId());
+            } else {
+                // The last ledger has reached the limit of entries/size, so we
+                // force to close current ledger and start a new one
+                lastLedger.close();
+                log.info("[{}] Closing ledger {} for being full.", name, lastLedger.getId());
+            }
 
             // Update LedgerStat instance
             ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), lastLedger.getLastAddConfirmed() + 1,
@@ -175,7 +186,15 @@ public class ManagedLedgerImpl implements ManagedLedger {
             log.debug("[{}] Created a new ledger: {}", name, lastLedger.getId());
         }
 
-        lastLedger.addEntry(data);
+        try {
+            lastLedger.addEntry(data);
+        } catch (Exception e) {
+            // Force to close lastLedger
+            log.error("[{}] Error adding entry in ledger {}", name, lastLedger.getId());
+            lastLedgerIsTainted.set(true);
+            throw e;
+        }
+
         numberOfEntries.incrementAndGet();
         totalSize.addAndGet(data.length);
         ++lastLedgerEntries;
@@ -186,8 +205,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#asyncAddEntry(byte[],
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#asyncAddEntry(byte[],
      * org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback,
      * java.lang.Object)
      */
@@ -196,7 +214,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // If we can append to the last ledger, we do it in the async mode, else
         // we fallback to the background thread async.
         synchronized (this) {
-            if (lastLedger != null && !isLastLedgerFull()) {
+            if (lastLedger != null && !isLastLedgerFull() && !lastLedgerIsTainted.get()) {
                 log.debug("Using ledger.asyncAddEntry()");
 
                 // Update only last ledger stats. These stats are only used to
@@ -216,8 +234,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
                         BKException exception = null;
                         if (rc != BKException.Code.OK) {
                             exception = BKException.create(rc);
+                            ml.lastLedgerIsTainted.set(true);
                         } else {
-                            ManagedLedgerImpl ml = (ManagedLedgerImpl) mlCtx;
                             ml.numberOfEntries.incrementAndGet();
                             ml.totalSize.addAndGet(data.length);
                         }
@@ -306,8 +324,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#asyncOpenCursor(java
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#asyncOpenCursor(java
      * .lang.String,
      * org.apache.bookkeeper.mledger.AsyncCallbacks.OpenCursorCallback,
      * java.lang.Object)
@@ -334,8 +351,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#getNumberOfEntries()
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#getNumberOfEntries()
      */
     @Override
     public long getNumberOfEntries() {
@@ -372,8 +388,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#asyncClose(com.yahoo
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#asyncClose(com.yahoo
      * .messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback,
      * java.lang.Object)
      */
