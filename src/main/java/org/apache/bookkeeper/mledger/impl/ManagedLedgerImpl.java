@@ -101,7 +101,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
         };
         this.ledgerCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.SECONDS)
                 .removalListener(removalListener).build();
+    }
 
+    protected synchronized void initialize() throws Exception {
         log.info("Opening managed ledger {}", name);
 
         // Fetch the list of existing ledgers in the managed ledger
@@ -135,6 +137,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
     }
 
+    @Override
     public String getName() {
         return name;
     }
@@ -186,8 +189,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#asyncAddEntry(byte[],
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#asyncAddEntry(byte[],
      * org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback,
      * java.lang.Object)
      */
@@ -306,8 +308,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#asyncOpenCursor(java
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#asyncOpenCursor(java
      * .lang.String,
      * org.apache.bookkeeper.mledger.AsyncCallbacks.OpenCursorCallback,
      * java.lang.Object)
@@ -334,8 +335,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#getNumberOfEntries()
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#getNumberOfEntries()
      */
     @Override
     public long getNumberOfEntries() {
@@ -372,8 +372,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedLedger#asyncClose(com.yahoo
+     * @see org.apache.bookkeeper.mledger.ManagedLedger#asyncClose(com.yahoo
      * .messaging.bookkeeper.ledger.AsyncCallbacks.CloseCallback,
      * java.lang.Object)
      */
