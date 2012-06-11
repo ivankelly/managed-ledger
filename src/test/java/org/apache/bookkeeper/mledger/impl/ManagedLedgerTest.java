@@ -775,4 +775,50 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         entries = cursor.readEntries(2);
         assertEquals(entries.size(), 0);
     }
+
+    @Test
+    public void differentSessions() throws Exception {
+        String zookeeperQuorum = bkc.getConf().getZkServers();
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
+
+        ManagedLedger ledger = factory.open("my_test_ledger");
+
+        assertEquals(ledger.getNumberOfEntries(), 0);
+        assertEquals(ledger.getTotalSize(), 0);
+
+        ManagedCursor cursor = ledger.openCursor("c1");
+
+        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        assertEquals(ledger.getTotalSize(), "dummy-entry-1".getBytes(Encoding).length);
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        assertEquals(cursor.getNumberOfEntries(), 1);
+
+        ledger.close();
+
+        // Create a new factory and re-open the same managed ledger
+        factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
+
+        ledger = factory.open("my_test_ledger");
+
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        assertEquals(ledger.getTotalSize(), "dummy-entry-1".getBytes(Encoding).length);
+
+        cursor = ledger.openCursor("c1");
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        assertEquals(cursor.getNumberOfEntries(), 1);
+
+        ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+
+        assertEquals(ledger.getNumberOfEntries(), 2);
+        assertEquals(ledger.getTotalSize(), "dummy-entry-1".getBytes(Encoding).length * 2);
+
+        assertEquals(cursor.hasMoreEntries(), true);
+        assertEquals(cursor.getNumberOfEntries(), 2);
+
+        ledger.close();
+    }
 }
