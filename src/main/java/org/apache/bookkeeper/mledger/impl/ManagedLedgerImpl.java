@@ -522,8 +522,9 @@ public class ManagedLedgerImpl implements ManagedLedger {
         // in the older ledgers for entries past the current position
         LedgerStat ls = ledgers.get(position.getLedgerId());
         if (ls == null) {
-            // Position is still invalid
-            return false;
+            // The cursor haven't been initialized yet
+            checkArgument(position.getLedgerId() == -1);
+            return !ledgers.isEmpty();
         } else {
             checkArgument(position.getEntryId() < ls.getEntriesCount());
 
