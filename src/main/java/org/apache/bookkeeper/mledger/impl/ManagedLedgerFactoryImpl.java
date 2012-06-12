@@ -36,7 +36,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     private final MetaStore store;
     private final BookKeeper bookKeeper;
     private final boolean isBookkeeperManaged;
-    private ZooKeeper zookeeper = null;
+    private final ZooKeeper zookeeper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private final ConcurrentMap<String, ManagedLedgerImpl> ledgers = Maps.newConcurrentMap();
@@ -71,6 +71,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     public ManagedLedgerFactoryImpl(BookKeeper bookKeeper, ZooKeeper zooKeeper) throws Exception {
         this.bookKeeper = bookKeeper;
         this.isBookkeeperManaged = false;
+        this.zookeeper = null;
         this.store = new MetaStoreImplZookeeper(zooKeeper);
     }
 
@@ -92,7 +93,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * lang.String, org.apache.bookkeeper.mledger.ManagedLedgerConfig)
      */
     @Override
-    public synchronized ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception {
+    public ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception {
         ManagedLedgerImpl ledger = ledgers.get(name);
         if (ledger != null) {
             log.info("Reusing opened ManagedLedger: {}", name);
@@ -157,11 +158,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     @Override
     public void delete(String name) throws Exception {
         ManagedLedgerImpl ledger = (ManagedLedgerImpl) open(name);
-
-        synchronized (this) {
-            ledgers.remove(ledger.getName());
-        }
-
+        ledgers.remove(ledger.getName());
         ledger.delete();
     }
 
@@ -188,13 +185,13 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
         });
     }
 
-    protected synchronized void close(ManagedLedger ledger) {
+    protected void close(ManagedLedger ledger) {
         // Remove the ledger from the internal factory cache
         ledgers.remove(ledger.getName());
     }
 
     @Override
-    public synchronized void shutdown() throws Exception {
+    public void shutdown() throws Exception {
         executor.shutdown();
 
         for (ManagedLedger ledger : ledgers.values()) {
