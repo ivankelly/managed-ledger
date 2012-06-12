@@ -35,6 +35,7 @@ import com.google.common.collect.Maps;
 public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     private final MetaStore store;
     private final BookKeeper bookKeeper;
+    private final boolean isBookkeeperManaged;
     private ZooKeeper zookeeper = null;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -46,6 +47,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
     public ManagedLedgerFactoryImpl(String zookeeperQuorum, int sessionTimeout) throws Exception {
         this.bookKeeper = new BookKeeper(zookeeperQuorum);
+        this.isBookkeeperManaged = true;
 
         final CountDownLatch counter = new CountDownLatch(1);
 
@@ -68,6 +70,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
     public ManagedLedgerFactoryImpl(BookKeeper bookKeeper, ZooKeeper zooKeeper) throws Exception {
         this.bookKeeper = bookKeeper;
+        this.isBookkeeperManaged = false;
         this.store = new MetaStoreImplZookeeper(zooKeeper);
     }
 
@@ -193,8 +196,17 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     @Override
     public synchronized void shutdown() throws Exception {
         executor.shutdown();
+
+        for (ManagedLedger ledger : ledgers.values()) {
+            ledger.close();
+        }
+
         if (zookeeper != null) {
             zookeeper.close();
+        }
+
+        if (isBookkeeperManaged) {
+            bookKeeper.close();
         }
     }
 
