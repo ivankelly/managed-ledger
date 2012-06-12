@@ -314,5 +314,34 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         cursor.seek(new Position(lastPosition.getLedgerId(), lastPosition.getEntryId() + 1));
     }
 
+    @Test
+    void markDeleteSkippingMessage() throws Exception {
+        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(10));
+        ManagedCursor cursor = ledger.openCursor("c1");
+        Position p1 = ledger.addEntry("dummy-entry-1".getBytes(Encoding));
+        Position p2 = ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        Position p4 = ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+
+        assertEquals(cursor.getNumberOfEntries(), 4);
+
+        cursor.markDelete(p1);
+        assertEquals(cursor.hasMoreEntries(), true);
+        assertEquals(cursor.getNumberOfEntries(), 3);
+
+        assertEquals(cursor.getReadPosition(), p2);
+
+        List<Entry> entries = cursor.readEntries(1);
+        assertEquals(entries.size(), 1);
+        assertEquals(new String(entries.get(0).getData(), Encoding), "dummy-entry-2");
+
+        cursor.markDelete(p4);
+        assertEquals(cursor.hasMoreEntries(), false);
+        assertEquals(cursor.getNumberOfEntries(), 0);
+
+        assertEquals(cursor.getReadPosition(), new Position(p4.getLedgerId(), p4.getEntryId() + 1));
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorTest.class);
 }

@@ -78,8 +78,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#asyncReadEntries(int,
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#asyncReadEntries(int,
      * org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback,
      * java.lang.Object)
      */
@@ -115,8 +114,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#getNumberOfEntries()
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#getNumberOfEntries()
      */
     @Override
     public synchronized long getNumberOfEntries() {
@@ -126,8 +124,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#acknowledge(Position)
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#acknowledge(Position)
      */
     @Override
     public synchronized void markDelete(Position position) throws Exception {
@@ -139,13 +136,18 @@ class ManagedCursorImpl implements ManagedCursor {
 
     protected synchronized void setAcknowledgedPosition(Position newPosition) {
         acknowledgedPosition = newPosition;
+        if (acknowledgedPosition.compareTo(readPosition) >= 0) {
+            // If the position that is markdeleted is past the read position, it
+            // means that the client has skipped some entries. We need to move
+            // read position forward
+            readPosition = new Position(acknowledgedPosition.getLedgerId(), acknowledgedPosition.getEntryId() + 1);
+        }
     }
 
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#asyncMarkDelete(com
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#asyncMarkDelete(com
      * .yahoo.messaging.bookkeeper.ledger.Position,
      * org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback,
      * java.lang.Object)
@@ -192,8 +194,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#getReadPosition()
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#getReadPosition()
      */
     @Override
     public synchronized Position getReadPosition() {
@@ -203,8 +204,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#getMarkDeletedPosition
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#getMarkDeletedPosition
      * ()
      */
     @Override
@@ -226,8 +226,7 @@ class ManagedCursorImpl implements ManagedCursor {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.ManagedCursor#seek(com.yahoo.messaging
+     * @see org.apache.bookkeeper.mledger.ManagedCursor#seek(com.yahoo.messaging
      * .bookkeeper.ledger.Position)
      */
     @Override
