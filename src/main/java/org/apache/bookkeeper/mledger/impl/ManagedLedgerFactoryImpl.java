@@ -18,11 +18,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenLedgerCallback;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
@@ -82,7 +84,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * lang.String)
      */
     @Override
-    public ManagedLedger open(String name) throws Exception {
+    public ManagedLedger open(String name) throws InterruptedException, ManagedLedgerException {
         return open(name, new ManagedLedgerConfig());
     }
 
@@ -93,7 +95,8 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * lang.String, org.apache.bookkeeper.mledger.ManagedLedgerConfig)
      */
     @Override
-    public ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception {
+    public ManagedLedger open(String name, ManagedLedgerConfig config) throws InterruptedException,
+            ManagedLedgerException {
         ManagedLedgerImpl ledger = ledgers.get(name);
         if (ledger != null) {
             log.info("Reusing opened ManagedLedger: {}", name);
@@ -156,7 +159,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * .lang.String)
      */
     @Override
-    public void delete(String name) throws Exception {
+    public void delete(String name) throws InterruptedException, ManagedLedgerException {
         ManagedLedgerImpl ledger = (ManagedLedgerImpl) open(name);
         ledgers.remove(ledger.getName());
         ledger.delete();
@@ -191,7 +194,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     }
 
     @Override
-    public void shutdown() throws Exception {
+    public void shutdown() throws InterruptedException, ManagedLedgerException {
         executor.shutdown();
 
         for (ManagedLedger ledger : ledgers.values()) {
@@ -203,8 +206,13 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
         }
 
         if (isBookkeeperManaged) {
-            bookKeeper.close();
+            try {
+                bookKeeper.close();
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
+            }
         }
+
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerFactoryImpl.class);

@@ -29,9 +29,9 @@ public interface ManagedLedgerFactory {
      * @param name
      *            the unique name that identifies the managed ledger
      * @return the managed ledger
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public ManagedLedger open(String name) throws Exception;
+    public ManagedLedger open(String name) throws InterruptedException, ManagedLedgerException;
 
     /**
      * Open a managed ledger. If the managed ledger does not exist, a new one
@@ -42,9 +42,10 @@ public interface ManagedLedgerFactory {
      * @param config
      *            managed ledger configuration
      * @return the managed ledger
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception;
+    public ManagedLedger open(String name, ManagedLedgerConfig config) throws InterruptedException,
+            ManagedLedgerException;
 
     /**
      * Asynchronous open method.
@@ -80,9 +81,9 @@ public interface ManagedLedgerFactory {
      * 
      * @param name
      *            the unique name that identifies the managed ledger
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public void delete(String name) throws Exception;
+    public void delete(String name) throws InterruptedException, ManagedLedgerException;
 
     /**
      * Delete a managed ledger asynchronously.
@@ -100,7 +101,7 @@ public interface ManagedLedgerFactory {
     /**
      * Releases all the resources maintained by the ManagedLedgerFactory
      * 
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public void shutdown() throws Exception;
+    public void shutdown() throws InterruptedException, ManagedLedgerException;
 }

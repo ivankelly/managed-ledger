@@ -19,6 +19,7 @@ import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.List;
 
+import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.apache.zookeeper.CreateMode;
@@ -53,17 +54,18 @@ public class MetaStoreImplZookeeper implements MetaStore {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.impl.MetaStore#getLedgerIds(java
+     * @see org.apache.bookkeeper.mledger.impl.MetaStore#getLedgerIds(java
      * .lang.String)
      */
     @Override
-    public List<LedgerStat> getLedgerIds(String ledgerName) throws Exception {
+    public List<LedgerStat> getLedgerIds(String ledgerName) throws MetaStoreException {
         byte[] data;
         try {
             data = zk.getData(prefix + ledgerName, false, null);
         } catch (NoNodeException e) {
             return Lists.newArrayList();
+        } catch (Exception e) {
+            throw new MetaStoreException(e);
         }
 
         if (data.length == 0)
@@ -81,42 +83,47 @@ public class MetaStoreImplZookeeper implements MetaStore {
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.impl.MetaStore#updateLedgersIds
+     * @see org.apache.bookkeeper.mledger.impl.MetaStore#updateLedgersIds
      * (java.lang.String, java.lang.Iterable)
      */
     @Override
-    public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws Exception {
+    public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws MetaStoreException {
         StringBuilder sb = new StringBuilder();
         for (LedgerStat item : ledgerIds)
             sb.append(item).append(' ');
 
         try {
-            zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1);
-        } catch (NoNodeException e) {
-            log.info("Creating '{}' Content='{}'", prefix + ledgerName,
-                    Arrays.toString(sb.toString().getBytes(Encoding)));
-            zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
-
+            try {
+                zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1);
+            } catch (NoNodeException e) {
+                log.info("Creating '{}' Content='{}'", prefix + ledgerName,
+                        Arrays.toString(sb.toString().getBytes(Encoding)));
+                zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
+            }
+        } catch (Exception e) {
+            throw new MetaStoreException(e);
         }
     }
 
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.impl.MetaStore#getConsumers(java
+     * @see org.apache.bookkeeper.mledger.impl.MetaStore#getConsumers(java
      * .lang.String)
      */
     @Override
-    public List<Pair<String, Position>> getConsumers(String ledgerName) throws Exception {
+    public List<Pair<String, Position>> getConsumers(String ledgerName) throws MetaStoreException {
         List<Pair<String, Position>> consumers = Lists.newArrayList();
 
-        for (String name : zk.getChildren(prefix + ledgerName, false)) {
-            byte[] data = zk.getData(prefix + ledgerName + "/" + name, false, null);
-            String content = new String(data, Encoding);
-            log.debug("[{}] Processing consumer '{}' pos={}", va(ledgerName, name, content));
-            consumers.add(Pair.create(name, new Position(content)));
+        try {
+            for (String name : zk.getChildren(prefix + ledgerName, false)) {
+                byte[] data = zk.getData(prefix + ledgerName + "/" + name, false, null);
+                String content = new String(data, Encoding);
+                log.debug("[{}] Processing consumer '{}' pos={}", va(ledgerName, name, content));
+                consumers.add(Pair.create(name, new Position(content)));
+            }
+        } catch (Exception e) {
+            throw new MetaStoreException(e);
         }
 
         log.debug("Consumer list: {}", consumers);
@@ -131,46 +138,56 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * org.apache.bookkeeper.mledger.Position)
      */
     @Override
-    public void updateConsumer(String ledgerName, String consumerName, Position position) throws Exception {
+    public void updateConsumer(String ledgerName, String consumerName, Position position) throws MetaStoreException {
         log.trace("[{}] Updating position consumer={} new_position={}", va(ledgerName, consumerName, position));
 
         try {
-            zk.setData(prefix + ledgerName + "/" + consumerName, position.toString().getBytes(Encoding), -1);
-        } catch (NoNodeException e) {
-            zk.create(prefix + ledgerName + "/" + consumerName, position.toString().getBytes(Encoding), Acl,
-                    CreateMode.PERSISTENT);
+            try {
+                zk.setData(prefix + ledgerName + "/" + consumerName, position.toString().getBytes(Encoding), -1);
+            } catch (NoNodeException e) {
+                zk.create(prefix + ledgerName + "/" + consumerName, position.toString().getBytes(Encoding), Acl,
+                        CreateMode.PERSISTENT);
+            }
+        } catch (Exception e) {
+            throw new MetaStoreException(e);
         }
     }
 
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.impl.MetaStore#removeConsumer(java
+     * @see org.apache.bookkeeper.mledger.impl.MetaStore#removeConsumer(java
      * .lang.String, java.lang.String)
      */
     @Override
-    public void removeConsumer(String ledgerName, String consumerName) throws Exception {
+    public void removeConsumer(String ledgerName, String consumerName) throws MetaStoreException {
         log.info("[{}] Remove consumer={}", ledgerName, consumerName);
-        zk.delete(prefix + ledgerName + "/" + consumerName, -1);
+        try {
+            zk.delete(prefix + ledgerName + "/" + consumerName, -1);
+        } catch (Exception e) {
+            throw new MetaStoreException(e);
+        }
     }
 
     /*
      * (non-Javadoc)
      * 
-     * @see
-     * org.apache.bookkeeper.mledger.impl.MetaStore#removeManagedLedger
+     * @see org.apache.bookkeeper.mledger.impl.MetaStore#removeManagedLedger
      * (java.lang.String)
      */
     @Override
-    public void removeManagedLedger(String ledgerName) throws Exception {
-        // First remove all the consumers
-        for (String consumer : zk.getChildren(prefix + ledgerName, false)) {
-            removeConsumer(ledgerName, consumer);
-        }
+    public void removeManagedLedger(String ledgerName) throws MetaStoreException {
+        try {
+            // First remove all the consumers
+            for (String consumer : zk.getChildren(prefix + ledgerName, false)) {
+                removeConsumer(ledgerName, consumer);
+            }
 
-        log.info("[{}] Remove ManagedLedger", ledgerName);
-        zk.delete(prefix + ledgerName, -1);
+            log.info("[{}] Remove ManagedLedger", ledgerName);
+            zk.delete(prefix + ledgerName, -1);
+        } catch (Exception e) {
+            throw new MetaStoreException(e);
+        }
     }
 
     private static final Logger log = LoggerFactory.getLogger(MetaStoreImplZookeeper.class);

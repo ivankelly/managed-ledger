@@ -31,14 +31,15 @@ import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenCursorCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
-import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
-import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenCursorCallback;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,7 +81,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
     // //////////////////////////////////////////////////////////////////////
 
     public ManagedLedgerImpl(ManagedLedgerFactoryImpl factory, BookKeeper bookKeeper, MetaStore store,
-            ManagedLedgerConfig config, Executor executor, final String name) throws Exception {
+            ManagedLedgerConfig config, Executor executor, final String name) {
         this.factory = factory;
         this.bookKeeper = bookKeeper;
         this.config = config;
@@ -105,7 +106,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
                 .removalListener(removalListener).build();
     }
 
-    protected synchronized void initialize() throws Exception {
+    protected synchronized void initialize() throws InterruptedException, ManagedLedgerException {
         log.info("Opening managed ledger {}", name);
 
         // Fetch the list of existing ledgers in the managed ledger
@@ -113,12 +114,17 @@ public class ManagedLedgerImpl implements ManagedLedger {
             ledgers.put(ls.getLedgerId(), ls);
         }
 
-        // Last ledger stat may be zeroed, we must update it
-        if (ledgers.size() > 0) {
-            long id = ledgers.lastKey();
-            LedgerHandle handle = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
-            ledgers.put(id, new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
-            handle.close();
+        try {
+            // Last ledger stat may be zeroed, we must update it
+            if (ledgers.size() > 0) {
+                long id = ledgers.lastKey();
+                LedgerHandle handle = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
+                ledgers.put(id, new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
+
+                handle.close();
+            }
+        } catch (BKException e) {
+            throw new ManagedLedgerException(e);
         }
 
         log.debug("[{}] Contains: {}", name, ledgers);
@@ -149,7 +155,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * 
      * @see org.apache.bookkeeper.mledger.ManagedLedger#addEntry(byte[])
      */
-    public synchronized Position addEntry(byte[] data) throws Exception {
+    public synchronized Position addEntry(byte[] data) throws InterruptedException, ManagedLedgerException {
         log.debug("Adding entry");
 
         if (lastLedger != null && (isLastLedgerFull() || lastLedgerIsTainted.get())) {
@@ -160,7 +166,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
             } else {
                 // The last ledger has reached the limit of entries/size, so we
                 // force to close current ledger and start a new one
-                lastLedger.close();
+                try {
+                    lastLedger.close();
+                } catch (BKException e) {
+                    throw new ManagedLedgerException(e);
+                }
                 log.info("[{}] Closing ledger {} for being full.", name, lastLedger.getId());
             }
 
@@ -177,8 +187,14 @@ public class ManagedLedgerImpl implements ManagedLedger {
             // We need to open a new ledger for writing
             lastLedgerEntries = 0;
             lastLedgerSize = 0;
-            lastLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
-                    config.getDigestType(), config.getPassword());
+
+            try {
+                lastLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
+                        config.getDigestType(), config.getPassword());
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
+            }
+
             ledgerCache.put(lastLedger.getId(), lastLedger);
 
             ledgers.put(lastLedger.getId(), new LedgerStat(lastLedger.getId(), 0, 0));
@@ -188,11 +204,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         try {
             lastLedger.addEntry(data);
-        } catch (Exception e) {
+        } catch (BKException e) {
             // Force to close lastLedger
             log.error("[{}] Error adding entry in ledger {}", name, lastLedger.getId());
             lastLedgerIsTainted.set(true);
-            throw e;
+            throw new ManagedLedgerException(e);
         }
 
         numberOfEntries.incrementAndGet();
@@ -296,7 +312,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * lang.String)
      */
     @Override
-    public synchronized ManagedCursor openCursor(String cursorName) throws Exception {
+    public synchronized ManagedCursor openCursor(String cursorName) throws InterruptedException, ManagedLedgerException {
         ManagedCursor cursor = cursors.get(cursorName);
 
         if (cursor == null) {
@@ -374,10 +390,14 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * @see org.apache.bookkeeper.mledger.ManagedLedger#close()
      */
     @Override
-    public synchronized void close() throws Exception {
+    public synchronized void close() throws InterruptedException, ManagedLedgerException {
         for (LedgerHandle ledger : ledgerCache.asMap().values()) {
             log.debug("Closing ledger: {}", ledger.getId());
-            ledger.close();
+            try {
+                ledger.close();
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
+            }
         }
 
         ledgerCache.invalidateAll();
@@ -415,7 +435,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
     // //////////////////////////////////////////////////////////////////////
     // Private helpers
 
-    protected synchronized Pair<List<Entry>, Position> readEntries(Position position, int count) throws Exception {
+    protected synchronized Pair<List<Entry>, Position> readEntries(Position position, int count)
+            throws InterruptedException, ManagedLedgerException {
 
         LedgerHandle ledger = null;
         LedgerHandle last = null;
@@ -450,7 +471,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
             // Open the ledger and cache the handle
             log.debug("[{}] Opening ledger {} for read", name, id);
-            ledger = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
+            try {
+                ledger = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
+            }
         }
 
         // Perform the read
@@ -474,7 +499,12 @@ public class ManagedLedgerImpl implements ManagedLedger {
 
         log.debug("[{}] Reading entries from ledger {} - first={} last={}", va(name, id, firstEntry, lastEntry));
 
-        Enumeration<LedgerEntry> entriesEnum = ledger.readEntries(firstEntry, lastEntry);
+        Enumeration<LedgerEntry> entriesEnum = null;
+        try {
+            entriesEnum = ledger.readEntries(firstEntry, lastEntry);
+        } catch (BKException e) {
+            throw new ManagedLedgerException(e);
+        }
         long expectedEntries = lastEntry - firstEntry + 1;
         List<Entry> entries = Lists.newArrayListWithExpectedSize((int) expectedEntries);
 
@@ -533,7 +563,8 @@ public class ManagedLedgerImpl implements ManagedLedger {
         }
     }
 
-    protected synchronized void updateCursor(ManagedCursorImpl cursor, Position newPosition) throws Exception {
+    protected synchronized void updateCursor(ManagedCursorImpl cursor, Position newPosition)
+            throws InterruptedException, ManagedLedgerException {
         // First update the metadata store, so that if we don't succeed we have
         // not changed any other state
         store.updateConsumer(name, cursor.getName(), newPosition);
@@ -549,7 +580,7 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * 
      * @throws Exception
      */
-    private void trimConsumedLedgers() throws Exception {
+    private void trimConsumedLedgers() throws InterruptedException, ManagedLedgerException {
         long slowestReaderLedgerId = -1;
         if (cursors.isEmpty() && lastLedger != null) {
             // At this point the lastLedger will be pointing to the ledger that
@@ -567,7 +598,11 @@ public class ManagedLedgerImpl implements ManagedLedger {
             ledgerCache.invalidate(ledgerToDelete.getLedgerId());
 
             log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
-            bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
+            try {
+                bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
+            }
 
             // Update metadata
             store.updateLedgersIds(name, ledgers.values());
@@ -583,13 +618,17 @@ public class ManagedLedgerImpl implements ManagedLedger {
      * 
      * @throws Exception
      */
-    void delete() throws Exception {
+    protected void delete() throws InterruptedException, ManagedLedgerException {
         close();
 
         synchronized (this) {
-            for (LedgerStat ls : ledgers.values()) {
-                log.debug("[{}] Deleting ledger {}", name, ls);
-                bookKeeper.deleteLedger(ls.getLedgerId());
+            try {
+                for (LedgerStat ls : ledgers.values()) {
+                    log.debug("[{}] Deleting ledger {}", name, ls);
+                    bookKeeper.deleteLedger(ls.getLedgerId());
+                }
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
             }
 
             store.removeManagedLedger(name);

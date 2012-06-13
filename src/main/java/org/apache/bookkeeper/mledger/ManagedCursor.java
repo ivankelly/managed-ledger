@@ -41,9 +41,9 @@ public interface ManagedCursor {
      * @param numberOfEntriesToRead
      *            maximum number of entries to return
      * @return the list of entries
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public List<Entry> readEntries(int numberOfEntriesToRead) throws Exception;
+    public List<Entry> readEntries(int numberOfEntriesToRead) throws InterruptedException, ManagedLedgerException;
 
     /**
      * Asynchronously read entries from the ManagedLedger.
@@ -84,9 +84,9 @@ public interface ManagedCursor {
      * 
      * @param position
      *            the last position that have been successfully consumed
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public void markDelete(Position position) throws Exception;
+    public void markDelete(Position position) throws InterruptedException, ManagedLedgerException;
 
     /**
      * Asynchronous mark delete

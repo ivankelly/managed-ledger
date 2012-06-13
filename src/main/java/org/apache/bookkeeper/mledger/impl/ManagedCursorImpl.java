@@ -24,11 +24,12 @@ import java.util.List;
 
 import javax.annotation.concurrent.ThreadSafe;
 
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,7 +47,8 @@ class ManagedCursorImpl implements ManagedCursor {
     private Position acknowledgedPosition;
     private Position readPosition;
 
-    ManagedCursorImpl(ManagedLedgerImpl ledger, String name, Position position) throws Exception {
+    ManagedCursorImpl(ManagedLedgerImpl ledger, String name, Position position) throws InterruptedException,
+            ManagedLedgerException {
         this.ledger = ledger;
         this.name = name;
         this.acknowledgedPosition = position;
@@ -64,7 +66,8 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#readEntries(int)
      */
     @Override
-    public synchronized List<Entry> readEntries(int numberOfEntriesToRead) throws Exception {
+    public synchronized List<Entry> readEntries(int numberOfEntriesToRead) throws InterruptedException,
+            ManagedLedgerException {
         checkArgument(numberOfEntriesToRead > 0);
 
         Position current = readPosition;
@@ -127,7 +130,7 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#acknowledge(Position)
      */
     @Override
-    public synchronized void markDelete(Position position) throws Exception {
+    public synchronized void markDelete(Position position) throws InterruptedException, ManagedLedgerException {
         checkNotNull(position);
 
         log.debug("[{}] Mark delete up to position: {}", ledger.getName(), position);

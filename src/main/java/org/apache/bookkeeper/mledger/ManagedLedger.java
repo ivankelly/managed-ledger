@@ -54,9 +54,9 @@ public interface ManagedLedger {
      * @param data
      *            data entry to be persisted
      * @return the Position at which the entry has been inserted
-     * @throws Exception
+     * @throws ManagedLedgerException 
      */
-    public Position addEntry(byte[] data) throws Exception;
+    public Position addEntry(byte[] data) throws InterruptedException, ManagedLedgerException;
 
     /**
      * Append a new entry asynchronously
@@ -81,9 +81,9 @@ public interface ManagedLedger {
      * @param name
      *            the name associated with the ManagedCursor
      * @return the ManagedCursor
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public ManagedCursor openCursor(String name) throws Exception;
+    public ManagedCursor openCursor(String name) throws InterruptedException, ManagedLedgerException;
 
     /**
      * Open a ManagedCursor asynchronously.
@@ -129,9 +129,9 @@ public interface ManagedLedger {
      * This will close all the underlying BookKeeper ledgers. All the
      * ManagedCursors associated will be invalidated.
      * 
-     * @throws Exception
+     * @throws ManagedLedgerException
      */
-    public void close() throws Exception;
+    public void close() throws InterruptedException, ManagedLedgerException;
 
     /**
      * Close the ManagedLedger asynchronously.
