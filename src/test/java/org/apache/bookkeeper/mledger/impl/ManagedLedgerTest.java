@@ -654,13 +654,6 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), true);
 
         cursor.markDelete(entries.get(0).getPosition());
-
-        // A ledger must have been deleted (in background) at this point
-        while (ledger.getNumberOfEntries() != 2)
-            Thread.sleep(10);
-
-        cursor.readEntries(1);
-        assertEquals(cursor.hasMoreEntries(), false);
     }
 
     @Test
