@@ -43,7 +43,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
 
     private static final Charset Encoding = Charsets.UTF_8;
 
-    @Test
+    @Test(timeOut = 3000)
     void readFromEmptyLedger() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger");
@@ -60,7 +60,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 0);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void testNumberOfEntries() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
@@ -166,20 +166,26 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         log.info("Cursor state: {}", cursor);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void skipEntries() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(1));
         ManagedCursor cursor = ledger.openCursor("c1");
         ledger.addEntry("dummy-entry-1".getBytes(Encoding));
 
+        log.info("ok1");
         assertEquals(cursor.getNumberOfEntries(), 1);
         cursor.skip(1);
+        log.info("ok2");
         assertEquals(cursor.getNumberOfEntries(), 0);
 
+        log.info("ok3");
         ledger.addEntry("dummy-entry-2".getBytes(Encoding));
+        log.info("ok4");
         ledger.addEntry("dummy-entry-3".getBytes(Encoding));
+        log.info("ok5");
         ledger.addEntry("dummy-entry-4".getBytes(Encoding));
+        log.info("ok6");
 
         assertEquals(cursor.getNumberOfEntries(), 3);
         cursor.skip(2);
@@ -188,7 +194,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 1);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void skipEntries2() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
@@ -216,7 +222,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         cursor.skip(-1);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void seekPosition() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(10));
@@ -229,7 +235,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         cursor.seek(new Position(lastPosition.getLedgerId(), lastPosition.getEntryId() - 1));
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void seekPosition2() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
@@ -244,7 +250,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         cursor.seek(new Position(seekPosition.getLedgerId(), seekPosition.getEntryId()));
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void seekPosition3() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));
@@ -309,7 +315,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         cursor.seek(new Position(lastPosition.getLedgerId(), lastPosition.getEntryId() + 1));
     }
 
-    @Test
+    @Test(timeOut = 3000)
     void markDeleteSkippingMessage() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(10));

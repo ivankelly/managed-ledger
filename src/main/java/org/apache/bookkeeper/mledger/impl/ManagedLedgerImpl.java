@@ -74,10 +74,14 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     protected AtomicLong totalSize = new AtomicLong(0);
 
     private LedgerHandle currentLedger;
-    private boolean currentLedgerIsClosed;
-    private boolean newLedgerIsBeingCreated;
     private long currentLedgerEntries = 0;
     private long currentLedgerSize = 0;
+
+    enum State {
+        None, LedgerOpened, ClosingLedger, ClosedLedger, CreatingLedger,
+    };
+
+    private State state;
 
     private final Executor executor;
     private final ManagedLedgerFactoryImpl factory;
@@ -100,8 +104,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         this.name = name;
         this.executor = executor;
         this.currentLedger = null;
-        this.currentLedgerIsClosed = false;
-        this.newLedgerIsBeingCreated = false;
+        this.state = State.None;
 
         RemovalListener<Long, LedgerHandle> removalListener = new RemovalListener<Long, LedgerHandle>() {
             public void onRemoval(RemovalNotification<Long, LedgerHandle> entry) {
@@ -145,7 +148,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         // Create a new ledger to start writing
         try {
             currentLedger = bookKeeper.createLedger(config.getDigestType(), config.getPassword());
-            currentLedgerIsClosed = false;
+            state = State.LedgerOpened;
             ledgers.put(currentLedger.getId(), new LedgerStat(currentLedger.getId(), 0, 0));
         } catch (BKException e) {
             throw new ManagedLedgerException(e);
@@ -204,24 +207,26 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
     @Override
     public synchronized void asyncAddEntry(final byte[] data, final AddEntryCallback callback, final Object ctx) {
-        log.debug("[{}] asyncAddEntry size={}", name, data.length);
+        checkArgument(state != State.None);
+        log.debug("[{}] asyncAddEntry size={} state={}", va(name, data.length, state));
         OpAddEntry addOperation = new OpAddEntry(this, data, callback, ctx);
 
-        if (currentLedgerIsClosed) {
+        if (state == State.ClosingLedger || state == State.CreatingLedger) {
             // We don't have a ready ledger to write into
-            if (newLedgerIsBeingCreated) {
-                // We are waiting for a new ledger to be created
-                log.debug("[{}] Queue addEntry request", name);
-                pendingAddEntries.add(addOperation);
-            } else {
-                // No ledger and no pending operations. A ledger.create()
-                // probably failed before. Retrying here to avoid staleness
-                pendingAddEntries.add(addOperation);
-                log.debug("[{}] Creating a new ledger", name);
-                bookKeeper.asyncCreateLedger(config.getEnsembleSize(), config.getQuorumSize(), config.getDigestType(),
-                        config.getPassword(), this, ctx);
-            }
-        } else if (!currentLedgerIsFull()) {
+            // We are waiting for a new ledger to be created
+            log.debug("[{}] Queue addEntry request", name);
+            pendingAddEntries.add(addOperation);
+        } else if (state == State.ClosedLedger) {
+            // No ledger and no pending operations. Create a new one
+            pendingAddEntries.add(addOperation);
+            log.debug("[{}] Creating a new ledger", name);
+            state = State.CreatingLedger;
+            bookKeeper.asyncCreateLedger(config.getEnsembleSize(), config.getQuorumSize(), config.getDigestType(),
+                    config.getPassword(), this, ctx);
+        } else {
+            checkArgument(state == State.LedgerOpened);
+            checkArgument(!currentLedgerIsFull());
+
             // Write into lastLedger
             log.debug("[{}] Write into current ledger lh={}", name, currentLedger.getId());
             addOperation.setLedger(currentLedger);
@@ -231,7 +236,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             if (currentLedgerIsFull()) {
                 // This entry will be the last added to current ledger
                 addOperation.setCloseWhenDone(true);
-                currentLedgerIsClosed = true;
+                state = State.ClosingLedger;
             }
 
             addOperation.initiate();
@@ -367,9 +372,9 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     @Override
     public synchronized void createComplete(int rc, LedgerHandle lh, Object ctx) {
         log.debug("[{}] createComplete rc={} ledger={}", va(name, rc, lh != null ? lh.getId() : -1));
-        newLedgerIsBeingCreated = false;
 
         if (rc != BKException.Code.OK) {
+            state = State.ClosedLedger;
             log.error("[{}] Error creating ledger rc={} {}", va(name, rc, BKException.getMessage(rc)));
             BKException status = BKException.create(rc);
 
@@ -383,7 +388,6 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             currentLedger = lh;
             currentLedgerEntries = 0;
             currentLedgerSize = 0;
-            currentLedgerIsClosed = false;
 
             // TODO: (Matteo) update the meta store async
             try {
@@ -396,6 +400,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
                 }
             }
 
+            state = State.LedgerOpened;
+
             // Process all the pending addEntry requests
             while (!pendingAddEntries.isEmpty()) {
                 OpAddEntry op = pendingAddEntries.poll();
@@ -405,9 +411,11 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
                 currentLedgerSize += op.data.length;
 
                 if (currentLedgerIsFull()) {
-                    currentLedgerIsClosed = true;
+                    state = State.ClosingLedger;
                     op.setCloseWhenDone(true);
                     op.initiate();
+                    log.debug("[{}] Stop writing into ledger {} queue={}",
+                            va(name, currentLedger.getId(), pendingAddEntries.size()));
                     break;
                 } else {
                     op.initiate();
@@ -419,16 +427,22 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     // //////////////////////////////////////////////////////////////////////
     // Private helpers
 
-    protected synchronized void ledgerClosed(LedgerHandle ledger) {
-        log.debug("[{}] Ledger has been closed id={} entries={}",
-                va(name, ledger.getId(), ledger.getLastAddConfirmed() + 1));
+    protected synchronized void ledgerClosed(LedgerHandle lh) {
+        checkArgument(lh.getId() == currentLedger.getId());
+        state = State.ClosedLedger;
 
-        ledgers.put(ledger.getId(),
-                new LedgerStat(ledger.getId(), ledger.getLastAddConfirmed() + 1, ledger.getLength()));
+        log.debug("[{}] Ledger has been closed id={} entries={}", va(name, lh.getId(), lh.getLastAddConfirmed() + 1));
+        ledgers.put(lh.getId(), new LedgerStat(lh));
 
-        bookKeeper.asyncCreateLedger(config.getEnsembleSize(), config.getQuorumSize(), config.getDigestType(),
-                config.getPassword(), this, null);
-        newLedgerIsBeingCreated = true;
+        trimConsumedLedgersInBackground();
+
+        if (!pendingAddEntries.isEmpty()) {
+            // Need to create a new ledger to write pending entries
+            log.debug("[{}] Creating a new ledger", name);
+            state = State.CreatingLedger;
+            bookKeeper.asyncCreateLedger(config.getEnsembleSize(), config.getQuorumSize(), config.getDigestType(),
+                    config.getPassword(), this, null);
+        }
     }
 
     protected synchronized void asyncReadEntries(OpReadEntry opReadEntry) {
@@ -598,7 +612,15 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         cursor.setAcknowledgedPosition(newPosition);
         cursors.cursorUpdated(cursor);
 
-        trimConsumedLedgers();
+        trimConsumedLedgersInBackground();
+    }
+
+    protected void trimConsumedLedgersInBackground() {
+        executor.execute(new Runnable() {
+            public void run() {
+                internalTrimConsumedLedgers();
+            }
+        });
     }
 
     /**
@@ -607,7 +629,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      * 
      * @throws Exception
      */
-    protected void trimConsumedLedgers() throws InterruptedException, ManagedLedgerException {
+    protected synchronized void internalTrimConsumedLedgers() {
         long slowestReaderLedgerId = -1;
         if (cursors.isEmpty() && currentLedger != null) {
             // At this point the lastLedger will be pointing to the ledger that
@@ -629,12 +651,18 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
                 bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
             } catch (BKNoSuchLedgerExistsException e) {
                 log.warn("[{}] Ledger was already deleted {}", name, ledgerToDelete.getLedgerId());
-            } catch (BKException e) {
-                throw new ManagedLedgerException(e);
+            } catch (Exception e) {
+                log.error("[{}] Error deleting ledger {}", name, ledgerToDelete.getLedgerId());
+                break;
             }
 
             // Update metadata
-            store.updateLedgersIds(name, ledgers.values());
+            try {
+                store.updateLedgersIds(name, ledgers.values());
+            } catch (MetaStoreException e) {
+                log.error("[{}] Failed to update the list of ledgers after trimming", name, e);
+                break;
+            }
 
             ledgers.remove(ledgerToDelete.getLedgerId());
             numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
@@ -677,7 +705,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         }
 
         // Last add the entries in the current ledger
-        if (!newLedgerIsBeingCreated)
+        if (state != State.ClosedLedger)
             count += currentLedger.getLastAddConfirmed() + 1;
 
         return count;

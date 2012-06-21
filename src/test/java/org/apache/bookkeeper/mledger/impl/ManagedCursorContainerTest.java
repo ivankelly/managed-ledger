@@ -26,7 +26,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.testng.annotations.Test;
 
-import com.google.inject.internal.Lists;
+import com.google.common.collect.Lists;
 
 @Test
 public class ManagedCursorContainerTest {

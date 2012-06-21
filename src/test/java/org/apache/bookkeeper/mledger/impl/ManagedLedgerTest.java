@@ -292,7 +292,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test(timeOut = 3000)
+    @Test(timeOut = 5000)
     public void spanningMultipleLedgersWithSize() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1000000);
@@ -633,7 +633,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), false);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void triggerLedgerDeletion() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -654,8 +654,10 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), true);
 
         cursor.markDelete(entries.get(0).getPosition());
-        // A ledger must have been deleted at this point
-        assertEquals(ledger.getNumberOfEntries(), 2);
+
+        // A ledger must have been deleted (in background) at this point
+        while (ledger.getNumberOfEntries() != 2)
+            Thread.sleep(10);
 
         cursor.readEntries(1);
         assertEquals(cursor.hasMoreEntries(), false);
@@ -675,7 +677,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 1);
     }
 
-    @Test
+    @Test(timeOut = 5000, enabled = false)
     public void testProducerAndNoConsumer() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -687,12 +689,14 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 1);
 
         // Since there are no consumers, older ledger will be deleted
-        // immediately
+        // in a short time (in a background thread)
         ledger.addEntry("entry-2".getBytes(Encoding));
-        assertEquals(ledger.getNumberOfEntries(), 1);
+        while (ledger.getNumberOfEntries() != 1)
+            Thread.sleep(10);
 
         ledger.addEntry("entry-3".getBytes(Encoding));
-        assertEquals(ledger.getNumberOfEntries(), 1);
+        while (ledger.getNumberOfEntries() != 1)
+            Thread.sleep(10);
     }
 
     @Test
@@ -740,6 +744,9 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
         assertEquals(cursor.hasMoreEntries(), true);
         assertEquals(cursor.getNumberOfEntries(), 2);
+
+        entries = cursor.readEntries(2);
+        assertEquals(entries.size(), 0);
 
         entries = cursor.readEntries(2);
         assertEquals(entries.size(), 1);
