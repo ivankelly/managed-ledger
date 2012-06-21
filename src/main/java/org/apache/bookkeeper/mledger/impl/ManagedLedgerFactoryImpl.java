@@ -109,7 +109,18 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
                 return oldValue;
             } else {
                 // Initialize the new ManagedLedger instance
-                ledger.initialize();
+                try {
+                    ledger.initialize();
+                } catch (ManagedLedgerException e) {
+                    // If initialize fails we need to remove the
+                    // half-initialized managed ledger from the cache
+                    ledgers.remove(name);
+                    throw e;
+                } catch (InterruptedException e) {
+                    ledgers.remove(name);
+                    throw e;
+                }
+
                 return ledger;
             }
         }
