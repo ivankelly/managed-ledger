@@ -58,7 +58,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     private static final Charset Encoding = Charsets.UTF_8;
 
-    @Test
+    @Test(timeOut = 3000)
     public void managedLedgerApi() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -93,7 +93,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void simple() throws Exception {
         String zookeeperQuorum = bkc.getConf().getZkServers();
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
@@ -126,7 +126,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void closeAndReopen() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -157,7 +157,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void acknowledge1() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -194,7 +194,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void asyncAPI() throws Throwable {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -258,7 +258,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         log.info("Test completed");
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void spanningMultipleLedgers() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(10);
@@ -355,7 +355,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         fail("Should have thrown an exception in the above line");
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void deleteAndReopen() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -377,7 +377,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void deleteAndReopenWithCursors() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -600,7 +600,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         barrier.await();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void readFromOlderLedger() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -613,7 +613,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), true);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void readFromOlderLedgers() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -656,7 +656,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         cursor.markDelete(entries.get(0).getPosition());
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void testEmptyManagedLedgerContent() throws Exception {
         ZooKeeper zk = bkc.getZkHandle();
         zk.create("/managed-ledger", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -692,7 +692,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
             Thread.sleep(10);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void testAsyncAddEntryAndSyncClose() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(10);
@@ -751,7 +751,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 0);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void differentSessions() throws Exception {
         String zookeeperQuorum = bkc.getConf().getZkServers();
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
