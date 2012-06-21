@@ -16,7 +16,6 @@ package org.apache.bookkeeper.mledger.impl;
 import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 
 import java.nio.charset.Charset;
-import java.util.Arrays;
 import java.util.List;
 
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
@@ -96,8 +95,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
             try {
                 zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1);
             } catch (NoNodeException e) {
-                log.info("Creating '{}' Content='{}'", prefix + ledgerName,
-                        Arrays.toString(sb.toString().getBytes(Encoding)));
+                log.info("Creating '{}' Content='{}'", prefix + ledgerName, sb.toString());
                 zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
             }
         } catch (Exception e) {

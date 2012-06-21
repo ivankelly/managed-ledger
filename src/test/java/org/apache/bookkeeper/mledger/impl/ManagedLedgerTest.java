@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.mledger.Entry;
@@ -462,6 +463,8 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         }, null);
 
         barrier.await();
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        assertEquals(ledger.getTotalSize(), "dummy-entry-1".getBytes(Encoding).length);
     }
 
     @Test(timeOut = 3000)
@@ -490,7 +493,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 10);
     }
 
-    @Test(timeOut = 3000)
+    @Test(timeOut = 3000, expectedExceptions = RejectedExecutionException.class)
     public void asyncAddEntryWithError() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -746,7 +749,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 100);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void moveCursorToNextLedger() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -754,11 +757,14 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ManagedCursor cursor = ledger.openCursor("test");
 
         ledger.addEntry("entry-1".getBytes(Encoding));
+        log.debug("Added 1st message");
         List<Entry> entries = cursor.readEntries(1);
         assertEquals(entries.size(), 1);
 
         ledger.addEntry("entry-2".getBytes(Encoding));
+        log.debug("Added 2nd message");
         ledger.addEntry("entry-3".getBytes(Encoding));
+        log.debug("Added 3nd message");
 
         assertEquals(cursor.hasMoreEntries(), true);
         assertEquals(cursor.getNumberOfEntries(), 2);

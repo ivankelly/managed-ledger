@@ -56,8 +56,6 @@ class ManagedCursorImpl implements ManagedCursor {
         // The read position has to ahead of the acknowledged position, by at
         // least 1, since it refers to the next entry that has to be read.
         this.readPosition = new Position(position.getLedgerId(), position.getEntryId() + 1);
-
-        ledger.getStore().updateConsumer(ledger.getName(), name, acknowledgedPosition);
     }
 
     /*
