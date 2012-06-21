@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 import javax.annotation.concurrent.ThreadSafe;
 
@@ -30,11 +31,11 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Objects;
+import com.google.inject.internal.Lists;
 
 /**
  */
@@ -64,16 +65,29 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#readEntries(int)
      */
     @Override
-    public synchronized List<Entry> readEntries(int numberOfEntriesToRead) throws InterruptedException,
-            ManagedLedgerException {
+    @SuppressWarnings("unchecked")
+    public List<Entry> readEntries(int numberOfEntriesToRead) throws InterruptedException, ManagedLedgerException {
         checkArgument(numberOfEntriesToRead > 0);
 
-        Position current = readPosition;
-        Pair<List<Entry>, Position> pair = ledger.readEntries(current, numberOfEntriesToRead);
+        final CountDownLatch counter = new CountDownLatch(1);
+        final List<Object> results = Lists.newArrayList();
 
-        Position newPosition = pair.second;
-        readPosition = newPosition;
-        return pair.first;
+        asyncReadEntries(numberOfEntriesToRead, new ReadEntriesCallback() {
+            public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
+                results.add(status);
+                results.add(entries);
+                counter.countDown();
+            }
+        }, null);
+
+        counter.await();
+
+        ManagedLedgerException status = (ManagedLedgerException) results.get(0);
+        List<Entry> entries = (List<Entry>) results.get(1);
+        if (status != null)
+            throw status;
+
+        return entries;
     }
 
     /*
@@ -85,21 +99,15 @@ class ManagedCursorImpl implements ManagedCursor {
      */
     @Override
     public void asyncReadEntries(final int numberOfEntriesToRead, final ReadEntriesCallback callback, final Object ctx) {
-        ledger.getExecutor().execute(new Runnable() {
-            public void run() {
-                Exception error = null;
-                List<Entry> entries = null;
+        checkArgument(numberOfEntriesToRead > 0);
 
-                try {
-                    entries = readEntries(numberOfEntriesToRead);
-                } catch (Exception e) {
-                    log.warn("[{}] Got exception when reading from cursor: {} {}", va(ledger.getName(), name, e));
-                    error = e;
-                }
+        Position current;
+        synchronized (this) {
+            current = readPosition;
+        }
 
-                callback.readEntriesComplete(error, entries, ctx);
-            }
-        });
+        OpReadEntry op = new OpReadEntry(this, current, numberOfEntriesToRead, callback, ctx);
+        ledger.asyncReadEntries(op);
     }
 
     /*
@@ -232,10 +240,20 @@ class ManagedCursorImpl implements ManagedCursor {
      */
     @Override
     public synchronized void seek(Position newReadPosition) {
-        checkArgument(newReadPosition.compareTo(acknowledgedPosition) >= 0,
+        checkArgument(newReadPosition.compareTo(acknowledgedPosition) > 0,
                 "new read position must be greater than or equal to the mark deleted position for this cursor");
 
         checkArgument(ledger.isValidPosition(newReadPosition), "new read position is not valid for this managed ledger");
+        readPosition = newReadPosition;
+    }
+
+    /**
+     * Internal version of seek that doesn't do the validation check
+     * 
+     * @param newReadPosition
+     */
+    protected synchronized void setReadPosition(Position newReadPosition) {
+        checkArgument(newReadPosition != null);
         readPosition = newReadPosition;
     }
 

@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * Handles the life-cycle of an addEntry() operation
  * 
  */
-class ManagedLedgerAddEntryOp implements AddCallback, CloseCallback {
+class OpAddEntry implements AddCallback, CloseCallback {
     private final ManagedLedgerImpl ml;
     private LedgerHandle ledger;
     private long entryId;
@@ -39,7 +39,7 @@ class ManagedLedgerAddEntryOp implements AddCallback, CloseCallback {
     private final Object ctx;
     private boolean closeWhenDone;
 
-    ManagedLedgerAddEntryOp(ManagedLedgerImpl ml, byte[] data, AddEntryCallback callback, Object ctx) {
+    OpAddEntry(ManagedLedgerImpl ml, byte[] data, AddEntryCallback callback, Object ctx) {
         this.ml = ml;
         this.ledger = null;
         this.data = data;
@@ -103,5 +103,5 @@ class ManagedLedgerAddEntryOp implements AddCallback, CloseCallback {
         callback.addComplete(null, new Position(lh.getId(), entryId), ctx);
     }
 
-    private static final Logger log = LoggerFactory.getLogger(ManagedLedgerAddEntryOp.class);
+    private static final Logger log = LoggerFactory.getLogger(OpAddEntry.class);
 }

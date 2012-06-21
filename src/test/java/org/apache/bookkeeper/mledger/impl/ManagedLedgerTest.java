@@ -548,35 +548,6 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
     }
 
     @Test(timeOut = 3000)
-    public void asyncCloseWithError() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
-
-        ManagedLedger ledger = factory.open("my_test_ledger");
-        ledger.openCursor("test-cursor");
-        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
-
-        final CyclicBarrier barrier = new CyclicBarrier(2);
-
-        stopBKCluster();
-        stopZKCluster();
-
-        ledger.asyncClose(new CloseCallback() {
-            public void closeComplete(Throwable status, Object ctx) {
-                assertNull(ctx);
-                assertNotNull(status);
-
-                try {
-                    barrier.await();
-                } catch (Exception e) {
-                    fail("Received exception ", e);
-                }
-            }
-        }, null);
-
-        barrier.await();
-    }
-
-    @Test(timeOut = 3000)
     public void asyncOpenCursorWithoutError() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -759,6 +730,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.addEntry("entry-1".getBytes(Encoding));
         log.debug("Added 1st message");
         List<Entry> entries = cursor.readEntries(1);
+        log.debug("read message ok");
         assertEquals(entries.size(), 1);
 
         ledger.addEntry("entry-2".getBytes(Encoding));
@@ -768,9 +740,6 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
         assertEquals(cursor.hasMoreEntries(), true);
         assertEquals(cursor.getNumberOfEntries(), 2);
-
-        entries = cursor.readEntries(2);
-        assertEquals(entries.size(), 0);
 
         entries = cursor.readEntries(2);
         assertEquals(entries.size(), 1);

@@ -17,7 +17,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.Math.min;
 import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 
-import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Queue;
@@ -28,7 +27,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.bookkeeper.client.AsyncCallback.CreateCallback;
+import org.apache.bookkeeper.client.AsyncCallback.OpenCallback;
+import org.apache.bookkeeper.client.AsyncCallback.ReadCallback;
 import org.apache.bookkeeper.client.BKException;
+import org.apache.bookkeeper.client.BKException.BKNoSuchLedgerExistsException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
@@ -53,7 +55,7 @@ import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
+public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCallback, ReadCallback {
 
     private final static long MegaByte = 1024 * 1024;
 
@@ -85,7 +87,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
      * entries are queued when a new ledger is created asynchronously and hence
      * there is no ready ledger to write into.
      */
-    private final Queue<ManagedLedgerAddEntryOp> pendingAddEntries = Lists.newLinkedList();
+    private final Queue<OpAddEntry> pendingAddEntries = Lists.newLinkedList();
 
     // //////////////////////////////////////////////////////////////////////
 
@@ -203,7 +205,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
     @Override
     public synchronized void asyncAddEntry(final byte[] data, final AddEntryCallback callback, final Object ctx) {
         log.debug("[{}] asyncAddEntry size={}", name, data.length);
-        ManagedLedgerAddEntryOp addOperation = new ManagedLedgerAddEntryOp(this, data, callback, ctx);
+        OpAddEntry addOperation = new OpAddEntry(this, data, callback, ctx);
 
         if (currentLedgerIsClosed) {
             // We don't have a ready ledger to write into
@@ -364,7 +366,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
      */
     @Override
     public synchronized void createComplete(int rc, LedgerHandle lh, Object ctx) {
-        log.debug("[{}] createComplete rc={}", va(name, rc));
+        log.debug("[{}] createComplete rc={} ledger={}", va(name, rc, lh != null ? lh.getId() : -1));
         newLedgerIsBeingCreated = false;
 
         if (rc != BKException.Code.OK) {
@@ -396,7 +398,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
 
             // Process all the pending addEntry requests
             while (!pendingAddEntries.isEmpty()) {
-                ManagedLedgerAddEntryOp op = pendingAddEntries.poll();
+                OpAddEntry op = pendingAddEntries.poll();
 
                 op.setLedger(lh);
                 ++currentLedgerEntries;
@@ -429,23 +431,22 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
         newLedgerIsBeingCreated = true;
     }
 
-    protected synchronized Pair<List<Entry>, Position> readEntries(Position position, int count)
-            throws InterruptedException, ManagedLedgerException {
-
+    protected synchronized void asyncReadEntries(OpReadEntry opReadEntry) {
         LedgerHandle ledger = null;
 
-        if (position.getLedgerId() == -1) {
+        if (opReadEntry.readPosition.getLedgerId() == -1) {
             if (ledgers.isEmpty()) {
                 // The ManagedLedger is completely empty
-                return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+                opReadEntry.emptyResponse();
+                return;
             }
 
             // Initialize the position on the first entry for the first ledger
             // in the set
-            position = new Position(ledgers.firstKey(), 0);
+            opReadEntry.readPosition = new Position(ledgers.firstKey(), 0);
         }
 
-        long id = position.getLedgerId();
+        long id = opReadEntry.readPosition.getLedgerId();
 
         if (id == currentLedger.getId()) {
             // Current writing ledger is not in the cache (since we don't want
@@ -454,77 +455,108 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
             ledger = currentLedger;
         } else {
             ledger = ledgerCache.getIfPresent(id);
-        }
-
-        if (ledger == null) {
-            // Ledger is not already open, verify that id is valid and try to
-            // open it
-            checkArgument(ledgers.containsKey(id), "[%s] Ledger id is not assigned to this managed ledger id=%s", name,
-                    id);
-
-            // Open the ledger and cache the handle
-            log.debug("[{}] Opening ledger {} for read", name, id);
-            try {
-                ledger = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
-                log.debug("ok 1");
-            } catch (BKException e) {
-                log.debug("error");
-                throw new ManagedLedgerException(e);
+            if (ledger == null) {
+                // Open the ledger and cache the handle
+                log.debug("[{}] Asynchronously opening ledger {} for read", name, id);
+                bookKeeper.asyncOpenLedger(id, config.getDigestType(), config.getPassword(), this, opReadEntry);
+                return;
             }
-
-            log.debug("ok");
         }
 
+        internalReadFromLedger(ledger, opReadEntry);
+    }
+
+    private void internalReadFromLedger(LedgerHandle ledger, OpReadEntry opReadEntry) {
         // Perform the read
-        long firstEntry = position.getEntryId();
+        long firstEntry = opReadEntry.readPosition.getEntryId();
 
         if (firstEntry > ledger.getLastAddConfirmed()) {
             log.debug("[{}] No more messages to read from ledger={} lastEntry={} readEntry={}",
                     va(name, ledger.getId(), ledger.getLastAddConfirmed(), firstEntry));
+
             if (ledger.getId() != currentLedger.getId()) {
                 // Cursor was placed past the end of one ledger, move it to the
                 // beginning of the next ledger
                 Long nextLedgerId = ledgers.ceilingKey(ledger.getId() + 1);
-                return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), new Position(nextLedgerId, 0));
-            } else {
-                // We reached the end of the entries stream
-                return new Pair<List<Entry>, Position>(new ArrayList<Entry>(), position);
+                opReadEntry.nextReadPosition = new Position(nextLedgerId, 0);
             }
+
+            opReadEntry.emptyResponse();
+            return;
         }
 
-        long lastEntry = min(firstEntry + count - 1, ledger.getLastAddConfirmed());
+        long lastEntry = min(firstEntry + opReadEntry.count - 1, ledger.getLastAddConfirmed());
 
-        log.debug("[{}] Reading entries from ledger {} - first={} last={}", va(name, id, firstEntry, lastEntry));
-
-        Enumeration<LedgerEntry> entriesEnum = null;
-        try {
-            entriesEnum = ledger.readEntries(firstEntry, lastEntry);
-        } catch (BKException e) {
-            throw new ManagedLedgerException(e);
-        }
         long expectedEntries = lastEntry - firstEntry + 1;
-        List<Entry> entries = Lists.newArrayListWithExpectedSize((int) expectedEntries);
+        opReadEntry.entries = Lists.newArrayListWithExpectedSize((int) expectedEntries);
 
+        log.debug("[{}] Reading entries from ledger {} - first={} last={}",
+                va(name, ledger.getId(), firstEntry, lastEntry));
+        ledger.asyncReadEntries(firstEntry, lastEntry, this, opReadEntry);
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * org.apache.bookkeeper.client.AsyncCallback.ReadCallback#readComplete(int,
+     * org.apache.bookkeeper.client.LedgerHandle, java.util.Enumeration,
+     * java.lang.Object)
+     */
+    @Override
+    public void readComplete(int rc, LedgerHandle lh, Enumeration<LedgerEntry> entriesEnum, Object ctx) {
+        OpReadEntry opReadEntry = (OpReadEntry) ctx;
+
+        if (rc != BKException.Code.OK) {
+            log.warn("[{}] read failed from ledger {} at position:{}", va(name, lh.getId(), opReadEntry.readPosition));
+            opReadEntry.failed(new ManagedLedgerException(BKException.create(rc)));
+            return;
+        }
+
+        List<Entry> entries = opReadEntry.entries;
         while (entriesEnum.hasMoreElements())
             entries.add(new EntryImpl(entriesEnum.nextElement()));
 
+        long lastEntry = entries.get(entries.size() - 1).getPosition().getEntryId();
+
         // Get the "next read position", we need to advance the position taking
         // care of ledgers boundaries
-        Position newPosition;
-        if (lastEntry < ledger.getLastAddConfirmed()) {
-            newPosition = new Position(id, lastEntry + 1);
+        Position nextReadPosition;
+        if (lastEntry < lh.getLastAddConfirmed()) {
+            nextReadPosition = new Position(lh.getId(), lastEntry + 1);
         } else {
             // Move to next ledger
-            Long nextLedgerId = ledgers.ceilingKey(id + 1);
+            Long nextLedgerId = ledgers.ceilingKey(lh.getId() + 1);
             if (nextLedgerId == null) {
                 // We are already in the last ledger
-                newPosition = new Position(id, lastEntry + 1);
+                nextReadPosition = new Position(lh.getId(), lastEntry + 1);
             } else {
-                newPosition = new Position(nextLedgerId, 0);
+                nextReadPosition = new Position(nextLedgerId, 0);
             }
         }
 
-        return Pair.create(entries, newPosition);
+        opReadEntry.nextReadPosition = nextReadPosition;
+        opReadEntry.succeeded();
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * org.apache.bookkeeper.client.AsyncCallback.OpenCallback#openComplete(int,
+     * org.apache.bookkeeper.client.LedgerHandle, java.lang.Object)
+     */
+    @Override
+    public void openComplete(int rc, LedgerHandle ledger, Object ctx) {
+        OpReadEntry opReadEntry = (OpReadEntry) ctx;
+
+        if (rc != BKException.Code.OK) {
+            opReadEntry.failed(new ManagedLedgerException(BKException.create(rc)));
+            return;
+        }
+
+        log.debug("[{}] Successfully opened ledger {} for reading", name, ledger.getId());
+        internalReadFromLedger(ledger, opReadEntry);
     }
 
     protected synchronized boolean hasMoreEntries(Position position) {
@@ -595,6 +627,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
             log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
             try {
                 bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
+            } catch (BKNoSuchLedgerExistsException e) {
+                log.warn("[{}] Ledger was already deleted {}", name, ledgerToDelete.getLedgerId());
             } catch (BKException e) {
                 throw new ManagedLedgerException(e);
             }
@@ -696,7 +730,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback {
      * @return true if the position is valid, false otherwise
      */
     protected synchronized boolean isValidPosition(Position position) {
-        if (currentLedger != null && position.getLedgerId() == currentLedger.getId()) {
+        if (position.getLedgerId() == currentLedger.getId()) {
             return position.getEntryId() <= currentLedger.getLastAddConfirmed();
         } else {
             // Look in the ledgers map

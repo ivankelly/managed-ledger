@@ -20,6 +20,7 @@ import static org.testng.Assert.fail;
 
 import java.nio.charset.Charset;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 
 import org.apache.bookkeeper.mledger.Entry;
@@ -118,25 +119,19 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
 
         ledger.addEntry("dummy-entry-1".getBytes(Encoding));
 
-        final CyclicBarrier barrier = new CyclicBarrier(2);
+        final CountDownLatch counter = new CountDownLatch(1);
 
         stopBKCluster();
 
         cursor.asyncReadEntries(100, new ReadEntriesCallback() {
             public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
                 assertNull(ctx);
-
                 assertNotNull(status);
-
-                try {
-                    barrier.await();
-                } catch (Exception e) {
-                    fail("Received exception ", e);
-                }
+                counter.countDown();
             }
         }, null);
 
-        barrier.await();
+        counter.await();
     }
 
     @Test(timeOut = 3000)
