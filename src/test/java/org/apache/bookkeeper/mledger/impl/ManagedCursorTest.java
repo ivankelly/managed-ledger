@@ -60,7 +60,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 0);
     }
 
-    @Test(timeOut = 3000)
+    @Test//(timeOut = 3000)
     void testNumberOfEntries() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedger ledger = factory.open("my_test_ledger", new ManagedLedgerConfig().setMaxEntriesPerLedger(2));

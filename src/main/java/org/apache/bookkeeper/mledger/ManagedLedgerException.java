@@ -13,7 +13,6 @@
  */
 package org.apache.bookkeeper.mledger;
 
-
 @SuppressWarnings("serial")
 public class ManagedLedgerException extends Exception {
     public ManagedLedgerException(String msg) {
@@ -26,6 +25,12 @@ public class ManagedLedgerException extends Exception {
 
     public static class MetaStoreException extends ManagedLedgerException {
         public MetaStoreException(Exception e) {
+            super(e);
+        }
+    }
+
+    public static class BadVersionException extends MetaStoreException {
+        public BadVersionException(Exception e) {
             super(e);
         }
     }

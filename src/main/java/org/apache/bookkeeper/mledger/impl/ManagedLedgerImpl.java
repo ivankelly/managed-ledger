@@ -45,6 +45,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback;
+import org.apache.bookkeeper.mledger.impl.MetaStore.Version;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +70,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
     private final Cache<Long, LedgerHandle> ledgerCache;
     protected final TreeMap<Long, LedgerStat> ledgers = Maps.newTreeMap();
+    private Version ledgersVersion;
 
     private final ManagedCursorContainer cursors = new ManagedCursorContainer();
 
@@ -107,6 +109,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         this.executor = executor;
         this.currentLedger = null;
         this.state = State.None;
+        this.ledgersVersion = null;
 
         RemovalListener<Long, LedgerHandle> removalListener = new RemovalListener<Long, LedgerHandle>() {
             public void onRemoval(RemovalNotification<Long, LedgerHandle> entry) {
@@ -128,7 +131,9 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         log.info("Opening managed ledger {}", name);
 
         // Fetch the list of existing ledgers in the managed ledger
-        for (LedgerStat ls : store.getLedgerIds(name)) {
+        Pair<Version, List<LedgerStat>> result = store.getLedgerIds(name);
+        ledgersVersion = result.first;
+        for (LedgerStat ls : result.second) {
             ledgers.put(ls.getLedgerId(), ls);
         }
 
@@ -157,7 +162,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         }
 
         // Save it back to ensure all nodes exist
-        store.updateLedgersIds(name, ledgers.values());
+        ledgersVersion = store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
 
         // Load existing cursors
         for (Pair<String, Position> pair : store.getConsumers(name)) {
@@ -391,7 +396,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             currentLedgerEntries = 0;
             currentLedgerSize = 0;
 
-            store.asyncUpdateLedgerIds(name, ledgers.values(), this, null);
+            store.asyncUpdateLedgerIds(name, ledgers.values(), ledgersVersion, this, null);
         }
     }
 
@@ -404,7 +409,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      * (org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException)
      */
     @Override
-    public synchronized void updateLedgersIdsComplete(MetaStoreException status) {
+    public synchronized void updateLedgersIdsComplete(MetaStoreException status, Version version) {
         if (status != null) {
             log.warn("Error updating meta data with the new list of ledgers");
             while (!pendingAddEntries.isEmpty()) {
@@ -415,6 +420,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         }
 
         state = State.LedgerOpened;
+        ledgersVersion = version;
 
         // Process all the pending addEntry requests
         while (!pendingAddEntries.isEmpty()) {
@@ -671,7 +677,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
             // Update metadata
             try {
-                store.updateLedgersIds(name, ledgers.values());
+                store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
             } catch (MetaStoreException e) {
                 log.error("[{}] Failed to update the list of ledgers after trimming", name, e);
                 break;
