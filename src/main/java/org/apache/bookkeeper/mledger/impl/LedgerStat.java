@@ -22,6 +22,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.bookkeeper.client.LedgerHandle;
+
 /**
  * LedgerStat holds a tuple of (LedgerId, EntriesCount, Size)
  */
@@ -31,6 +33,12 @@ public class LedgerStat {
     private final long size;
 
     private static final Pattern pattern = Pattern.compile("\\((\\d+)\\:(\\d+)\\:(\\d+)\\)");
+
+    LedgerStat(LedgerHandle lh) {
+        this.ledgerId = lh.getId();
+        this.entriesCount = lh.getLastAddConfirmed() + 1;
+        this.size = lh.getLength();
+    }
 
     LedgerStat(long ledgerId, long entriesCount, long size) {
         this.ledgerId = ledgerId;

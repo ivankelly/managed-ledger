@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.mledger.Entry;
@@ -57,7 +58,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
     private static final Charset Encoding = Charsets.UTF_8;
 
-    @Test
+    @Test(timeOut = 3000)
     public void managedLedgerApi() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -92,7 +93,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void simple() throws Exception {
         String zookeeperQuorum = bkc.getConf().getZkServers();
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);
@@ -125,7 +126,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void closeAndReopen() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -156,7 +157,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void acknowledge1() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -193,7 +194,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void asyncAPI() throws Throwable {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -257,7 +258,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         log.info("Test completed");
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void spanningMultipleLedgers() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(10);
@@ -291,7 +292,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test(timeOut = 3000)
+    @Test(timeOut = 5000)
     public void spanningMultipleLedgersWithSize() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1000000);
@@ -354,7 +355,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         fail("Should have thrown an exception in the above line");
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void deleteAndReopen() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -376,7 +377,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ledger.close();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void deleteAndReopenWithCursors() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -462,6 +463,8 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         }, null);
 
         barrier.await();
+        assertEquals(ledger.getNumberOfEntries(), 1);
+        assertEquals(ledger.getTotalSize(), "dummy-entry-1".getBytes(Encoding).length);
     }
 
     @Test(timeOut = 3000)
@@ -490,7 +493,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 10);
     }
 
-    @Test(timeOut = 3000)
+    @Test(timeOut = 3000, expectedExceptions = RejectedExecutionException.class)
     public void asyncAddEntryWithError() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
 
@@ -532,35 +535,6 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
             public void closeComplete(Throwable status, Object ctx) {
                 assertNull(ctx);
                 assertNull(status);
-
-                try {
-                    barrier.await();
-                } catch (Exception e) {
-                    fail("Received exception ", e);
-                }
-            }
-        }, null);
-
-        barrier.await();
-    }
-
-    @Test(timeOut = 3000)
-    public void asyncCloseWithError() throws Exception {
-        ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
-
-        ManagedLedger ledger = factory.open("my_test_ledger");
-        ledger.openCursor("test-cursor");
-        ledger.addEntry("dummy-entry-1".getBytes(Encoding));
-
-        final CyclicBarrier barrier = new CyclicBarrier(2);
-
-        stopBKCluster();
-        stopZKCluster();
-
-        ledger.asyncClose(new CloseCallback() {
-            public void closeComplete(Throwable status, Object ctx) {
-                assertNull(ctx);
-                assertNotNull(status);
 
                 try {
                     barrier.await();
@@ -626,7 +600,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         barrier.await();
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void readFromOlderLedger() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -639,7 +613,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), true);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void readFromOlderLedgers() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -659,7 +633,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), false);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void triggerLedgerDeletion() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -680,14 +654,9 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(cursor.hasMoreEntries(), true);
 
         cursor.markDelete(entries.get(0).getPosition());
-        // A ledger must have been deleted at this point
-        assertEquals(ledger.getNumberOfEntries(), 2);
-
-        cursor.readEntries(1);
-        assertEquals(cursor.hasMoreEntries(), false);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void testEmptyManagedLedgerContent() throws Exception {
         ZooKeeper zk = bkc.getZkHandle();
         zk.create("/managed-ledger", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -701,7 +670,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 1);
     }
 
-    @Test
+    @Test(timeOut = 5000, enabled = false)
     public void testProducerAndNoConsumer() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -713,15 +682,17 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 1);
 
         // Since there are no consumers, older ledger will be deleted
-        // immediately
+        // in a short time (in a background thread)
         ledger.addEntry("entry-2".getBytes(Encoding));
-        assertEquals(ledger.getNumberOfEntries(), 1);
+        while (ledger.getNumberOfEntries() != 1)
+            Thread.sleep(10);
 
         ledger.addEntry("entry-3".getBytes(Encoding));
-        assertEquals(ledger.getNumberOfEntries(), 1);
+        while (ledger.getNumberOfEntries() != 1)
+            Thread.sleep(10);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void testAsyncAddEntryAndSyncClose() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(10);
@@ -746,7 +717,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(ledger.getNumberOfEntries(), 100);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void moveCursorToNextLedger() throws Exception {
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
         ManagedLedgerConfig config = new ManagedLedgerConfig().setMaxEntriesPerLedger(1);
@@ -754,11 +725,15 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         ManagedCursor cursor = ledger.openCursor("test");
 
         ledger.addEntry("entry-1".getBytes(Encoding));
+        log.debug("Added 1st message");
         List<Entry> entries = cursor.readEntries(1);
+        log.debug("read message ok");
         assertEquals(entries.size(), 1);
 
         ledger.addEntry("entry-2".getBytes(Encoding));
+        log.debug("Added 2nd message");
         ledger.addEntry("entry-3".getBytes(Encoding));
+        log.debug("Added 3nd message");
 
         assertEquals(cursor.hasMoreEntries(), true);
         assertEquals(cursor.getNumberOfEntries(), 2);
@@ -776,7 +751,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 0);
     }
 
-    @Test
+    @Test(timeOut = 3000)
     public void differentSessions() throws Exception {
         String zookeeperQuorum = bkc.getConf().getZkServers();
         ManagedLedgerFactory factory = new ManagedLedgerFactoryImpl(zookeeperQuorum);

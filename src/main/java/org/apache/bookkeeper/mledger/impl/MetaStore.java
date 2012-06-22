@@ -15,6 +15,7 @@ package org.apache.bookkeeper.mledger.impl;
 
 import java.util.List;
 
+import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 
@@ -31,9 +32,9 @@ public interface MetaStore {
      * @param ledgerName
      *            the name of the ManagedLedger
      * @return a list of LedgerStats
-     * @throws Exception
+     * @throws MetaStoreException
      */
-    List<LedgerStat> getLedgerIds(String ledgerName) throws Exception;
+    List<LedgerStat> getLedgerIds(String ledgerName) throws MetaStoreException;
 
     /**
      * Update the list of LedgerStats associated with a ManagedLedger
@@ -42,9 +43,9 @@ public interface MetaStore {
      *            the name of the ManagedLedger
      * @param ledgerIds
      *            a sequence of LedgerStats
-     * @throws Exception
+     * @throws MetaStoreException
      */
-    void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws Exception;
+    void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws MetaStoreException;
 
     /**
      * Get the list of consumer registered on a ManagedLedger.
@@ -52,9 +53,9 @@ public interface MetaStore {
      * @param ledgerName
      *            the name of the ManagedLedger
      * @return a list of Pair<ConsumerId,Position> for the consumers
-     * @throws Exception
+     * @throws MetaStoreException
      */
-    List<Pair<String, Position>> getConsumers(String ledgerName) throws Exception;
+    List<Pair<String, Position>> getConsumers(String ledgerName) throws MetaStoreException;
 
     /**
      * Update the persisted position of a consumer
@@ -63,9 +64,9 @@ public interface MetaStore {
      *            the name of the ManagedLedger
      * @param consumerName
      * @param position
-     * @throws Exception
+     * @throws MetaStoreException
      */
-    void updateConsumer(String ledgerName, String consumerName, Position position) throws Exception;
+    void updateConsumer(String ledgerName, String consumerName, Position position) throws MetaStoreException;
 
     /**
      * Drop the persistent state of a consumer from the metadata store
@@ -74,9 +75,9 @@ public interface MetaStore {
      *            the name of the ManagedLedger
      * @param consumerName
      *            the consumer name
-     * @throws Exception
+     * @throws MetaStoreException
      */
-    void removeConsumer(String ledgerName, String consumerName) throws Exception;
+    void removeConsumer(String ledgerName, String consumerName) throws MetaStoreException;
 
     /**
      * Drop the persistent state for the ManagedLedger and all its associated
@@ -84,7 +85,7 @@ public interface MetaStore {
      * 
      * @param ledgerName
      *            the name of the ManagedLedger
-     * @throws Exception
+     * @throws MetaStoreException
      */
-    void removeManagedLedger(String ledgerName) throws Exception;
+    void removeManagedLedger(String ledgerName) throws MetaStoreException;
 }

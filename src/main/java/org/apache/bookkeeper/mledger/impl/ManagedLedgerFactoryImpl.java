@@ -18,11 +18,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenLedgerCallback;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
@@ -35,7 +37,8 @@ import com.google.common.collect.Maps;
 public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     private final MetaStore store;
     private final BookKeeper bookKeeper;
-    private ZooKeeper zookeeper = null;
+    private final boolean isBookkeeperManaged;
+    private final ZooKeeper zookeeper;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private final ConcurrentMap<String, ManagedLedgerImpl> ledgers = Maps.newConcurrentMap();
@@ -46,6 +49,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
     public ManagedLedgerFactoryImpl(String zookeeperQuorum, int sessionTimeout) throws Exception {
         this.bookKeeper = new BookKeeper(zookeeperQuorum);
+        this.isBookkeeperManaged = true;
 
         final CountDownLatch counter = new CountDownLatch(1);
 
@@ -68,6 +72,8 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
     public ManagedLedgerFactoryImpl(BookKeeper bookKeeper, ZooKeeper zooKeeper) throws Exception {
         this.bookKeeper = bookKeeper;
+        this.isBookkeeperManaged = false;
+        this.zookeeper = null;
         this.store = new MetaStoreImplZookeeper(zooKeeper);
     }
 
@@ -78,7 +84,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * lang.String)
      */
     @Override
-    public ManagedLedger open(String name) throws Exception {
+    public ManagedLedger open(String name) throws InterruptedException, ManagedLedgerException {
         return open(name, new ManagedLedgerConfig());
     }
 
@@ -89,7 +95,8 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * lang.String, org.apache.bookkeeper.mledger.ManagedLedgerConfig)
      */
     @Override
-    public synchronized ManagedLedger open(String name, ManagedLedgerConfig config) throws Exception {
+    public ManagedLedger open(String name, ManagedLedgerConfig config) throws InterruptedException,
+            ManagedLedgerException {
         ManagedLedgerImpl ledger = ledgers.get(name);
         if (ledger != null) {
             log.info("Reusing opened ManagedLedger: {}", name);
@@ -102,7 +109,18 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
                 return oldValue;
             } else {
                 // Initialize the new ManagedLedger instance
-                ledger.initialize();
+                try {
+                    ledger.initialize();
+                } catch (ManagedLedgerException e) {
+                    // If initialize fails we need to remove the
+                    // half-initialized managed ledger from the cache
+                    ledgers.remove(name);
+                    throw e;
+                } catch (InterruptedException e) {
+                    ledgers.remove(name);
+                    throw e;
+                }
+
                 return ledger;
             }
         }
@@ -152,13 +170,9 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * .lang.String)
      */
     @Override
-    public void delete(String name) throws Exception {
+    public void delete(String name) throws InterruptedException, ManagedLedgerException {
         ManagedLedgerImpl ledger = (ManagedLedgerImpl) open(name);
-
-        synchronized (this) {
-            ledgers.remove(ledger.getName());
-        }
-
+        ledgers.remove(ledger.getName());
         ledger.delete();
     }
 
@@ -185,17 +199,31 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
         });
     }
 
-    protected synchronized void close(ManagedLedger ledger) {
+    protected void close(ManagedLedger ledger) {
         // Remove the ledger from the internal factory cache
         ledgers.remove(ledger.getName());
     }
 
     @Override
-    public synchronized void shutdown() throws Exception {
+    public void shutdown() throws InterruptedException, ManagedLedgerException {
         executor.shutdown();
+
+        for (ManagedLedger ledger : ledgers.values()) {
+            ledger.close();
+        }
+
         if (zookeeper != null) {
             zookeeper.close();
         }
+
+        if (isBookkeeperManaged) {
+            try {
+                bookKeeper.close();
+            } catch (BKException e) {
+                throw new ManagedLedgerException(e);
+            }
+        }
+
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerFactoryImpl.class);

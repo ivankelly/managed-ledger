@@ -18,15 +18,15 @@ import static org.testng.Assert.fail;
 
 import java.util.List;
 
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
-import org.apache.bookkeeper.mledger.impl.ManagedCursorContainer;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
 import org.testng.annotations.Test;
 
-import com.google.inject.internal.Lists;
+import com.google.common.collect.Lists;
 
 @Test
 public class ManagedCursorContainerTest {
@@ -44,7 +44,7 @@ public class ManagedCursorContainerTest {
         }
 
         @Override
-        public List<Entry> readEntries(int numberOfEntriesToRead) throws Exception {
+        public List<Entry> readEntries(int numberOfEntriesToRead) throws ManagedLedgerException {
             return Lists.newArrayList();
         }
 
@@ -64,7 +64,7 @@ public class ManagedCursorContainerTest {
         }
 
         @Override
-        public void markDelete(Position position) throws Exception {
+        public void markDelete(Position position) throws ManagedLedgerException {
             this.position = position;
             container.cursorUpdated(this);
         }
