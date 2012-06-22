@@ -22,6 +22,7 @@ import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.concurrent.ThreadSafe;
 
@@ -45,18 +46,18 @@ class ManagedCursorImpl implements ManagedCursor {
     private final ManagedLedgerImpl ledger;
     private final String name;
 
-    private Position acknowledgedPosition;
-    private Position readPosition;
+    private final AtomicReference<Position> acknowledgedPosition = new AtomicReference<Position>();
+    private final AtomicReference<Position> readPosition = new AtomicReference<Position>();
 
     ManagedCursorImpl(ManagedLedgerImpl ledger, String name, Position position) throws InterruptedException,
             ManagedLedgerException {
         this.ledger = ledger;
         this.name = name;
-        this.acknowledgedPosition = position;
+        this.acknowledgedPosition.set(position);
 
         // The read position has to ahead of the acknowledged position, by at
         // least 1, since it refers to the next entry that has to be read.
-        this.readPosition = new Position(position.getLedgerId(), position.getEntryId() + 1);
+        this.readPosition.set(new Position(position.getLedgerId(), position.getEntryId() + 1));
     }
 
     /*
@@ -101,12 +102,7 @@ class ManagedCursorImpl implements ManagedCursor {
     public void asyncReadEntries(final int numberOfEntriesToRead, final ReadEntriesCallback callback, final Object ctx) {
         checkArgument(numberOfEntriesToRead > 0);
 
-        Position current;
-        synchronized (this) {
-            current = readPosition;
-        }
-
-        OpReadEntry op = new OpReadEntry(this, current, numberOfEntriesToRead, callback, ctx);
+        OpReadEntry op = new OpReadEntry(this, readPosition.get(), numberOfEntriesToRead, callback, ctx);
         ledger.asyncReadEntries(op);
     }
 
@@ -116,8 +112,8 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#hasMoreEntries()
      */
     @Override
-    public synchronized boolean hasMoreEntries() {
-        return ledger.hasMoreEntries(readPosition);
+    public boolean hasMoreEntries() {
+        return ledger.hasMoreEntries(readPosition.get());
     }
 
     /*
@@ -126,8 +122,8 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#getNumberOfEntries()
      */
     @Override
-    public synchronized long getNumberOfEntries() {
-        return ledger.getNumberOfEntries(readPosition);
+    public long getNumberOfEntries() {
+        return ledger.getNumberOfEntries(readPosition.get());
     }
 
     /*
@@ -136,20 +132,23 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#acknowledge(Position)
      */
     @Override
-    public synchronized void markDelete(Position position) throws InterruptedException, ManagedLedgerException {
+    public void markDelete(Position position) throws InterruptedException, ManagedLedgerException {
         checkNotNull(position);
 
         log.debug("[{}] Mark delete up to position: {}", ledger.getName(), position);
         ledger.updateCursor(this, position);
     }
 
-    protected synchronized void setAcknowledgedPosition(Position newPosition) {
-        acknowledgedPosition = newPosition;
-        if (acknowledgedPosition.compareTo(readPosition) >= 0) {
+    protected void setAcknowledgedPosition(Position newPosition) {
+        acknowledgedPosition.set(newPosition);
+
+        Position currentRead = readPosition.get();
+        if (newPosition.compareTo(currentRead) >= 0) {
             // If the position that is markdeleted is past the read position, it
             // means that the client has skipped some entries. We need to move
             // read position forward
-            readPosition = new Position(acknowledgedPosition.getLedgerId(), acknowledgedPosition.getEntryId() + 1);
+            readPosition.compareAndSet(currentRead, new Position(newPosition.getLedgerId(),
+                    newPosition.getEntryId() + 1));
         }
     }
 
@@ -206,8 +205,8 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#getReadPosition()
      */
     @Override
-    public synchronized Position getReadPosition() {
-        return readPosition;
+    public Position getReadPosition() {
+        return readPosition.get();
     }
 
     /*
@@ -217,8 +216,8 @@ class ManagedCursorImpl implements ManagedCursor {
      * ()
      */
     @Override
-    public synchronized Position getMarkDeletedPosition() {
-        return acknowledgedPosition;
+    public Position getMarkDeletedPosition() {
+        return acknowledgedPosition.get();
     }
 
     /*
@@ -227,9 +226,9 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#skip(int)
      */
     @Override
-    public synchronized void skip(int entries) {
+    public void skip(int entries) {
         checkArgument(entries > 0);
-        readPosition = ledger.skipEntries(readPosition, entries);
+        readPosition.set(ledger.skipEntries(readPosition.get(), entries));
     }
 
     /*
@@ -239,12 +238,12 @@ class ManagedCursorImpl implements ManagedCursor {
      * .bookkeeper.ledger.Position)
      */
     @Override
-    public synchronized void seek(Position newReadPosition) {
-        checkArgument(newReadPosition.compareTo(acknowledgedPosition) > 0,
+    public void seek(Position newReadPosition) {
+        checkArgument(newReadPosition.compareTo(acknowledgedPosition.get()) > 0,
                 "new read position must be greater than or equal to the mark deleted position for this cursor");
 
         checkArgument(ledger.isValidPosition(newReadPosition), "new read position is not valid for this managed ledger");
-        readPosition = newReadPosition;
+        readPosition.set(newReadPosition);
     }
 
     /**
@@ -252,9 +251,9 @@ class ManagedCursorImpl implements ManagedCursor {
      * 
      * @param newReadPosition
      */
-    protected synchronized void setReadPosition(Position newReadPosition) {
+    protected void setReadPosition(Position newReadPosition) {
         checkArgument(newReadPosition != null);
-        readPosition = newReadPosition;
+        readPosition.set(newReadPosition);
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedCursorImpl.class);

@@ -721,6 +721,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      * @return the new position
      */
     protected synchronized Position skipEntries(Position startPosition, int entriesToSkip) {
+        log.debug("[{}] Skipping {} entries from position {}", va(name, entriesToSkip, startPosition));
         long ledgerId = startPosition.getLedgerId();
         entriesToSkip += startPosition.getEntryId();
 
