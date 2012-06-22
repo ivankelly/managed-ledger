@@ -19,12 +19,15 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 
-
 /**
  * Interface that describes the operations that the ManagedLedger need to do on
  * the metadata store.
  */
 public interface MetaStore {
+
+    public static interface UpdateLedgersIdsCallback {
+        void updateLedgersIdsComplete(MetaStoreException status);
+    }
 
     /**
      * Get the list of ledgers used by the ManagedLedger
@@ -46,6 +49,9 @@ public interface MetaStore {
      * @throws MetaStoreException
      */
     void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws MetaStoreException;
+
+    void asyncUpdateLedgerIds(String ledgerName, Iterable<LedgerStat> ledgerIds, UpdateLedgersIdsCallback callback,
+            Object ctx);
 
     /**
      * Get the list of consumer registered on a ManagedLedger.

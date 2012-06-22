@@ -17,15 +17,19 @@ import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 
 import java.nio.charset.Charset;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
+import org.apache.zookeeper.AsyncCallback.StatCallback;
 import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,6 +66,13 @@ public class MetaStoreImplZookeeper implements MetaStore {
         try {
             data = zk.getData(prefix + ledgerName, false, null);
         } catch (NoNodeException e) {
+            log.info("Creating '{}'", prefix + ledgerName);
+            try {
+                zk.create(prefix + ledgerName, new byte[0], Acl, CreateMode.PERSISTENT);
+            } catch (Exception ce) {
+                throw new MetaStoreException(ce);
+            }
+
             return Lists.newArrayList();
         } catch (Exception e) {
             throw new MetaStoreException(e);
@@ -87,20 +98,54 @@ public class MetaStoreImplZookeeper implements MetaStore {
      */
     @Override
     public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws MetaStoreException {
+        final CountDownLatch counter = new CountDownLatch(1);
+        final List<Object> results = Lists.newArrayList();
+
+        asyncUpdateLedgerIds(ledgerName, ledgerIds, new UpdateLedgersIdsCallback() {
+            public void updateLedgersIdsComplete(MetaStoreException status) {
+                results.add(status);
+                counter.countDown();
+            }
+        }, null);
+
+        try {
+            counter.await();
+        } catch (InterruptedException e) {
+            throw new MetaStoreException(e);
+        }
+
+        MetaStoreException status = (MetaStoreException) results.get(0);
+        if (status != null) {
+            throw status;
+        }
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * org.apache.bookkeeper.mledger.impl.MetaStore#asyncUpdateLedgerIds(java
+     * .lang.String, java.lang.Iterable,
+     * org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback,
+     * java.lang.Object)
+     */
+    @Override
+    public void asyncUpdateLedgerIds(String ledgerName, Iterable<LedgerStat> ledgerIds,
+            final UpdateLedgersIdsCallback callback, final Object ctx) {
         StringBuilder sb = new StringBuilder();
         for (LedgerStat item : ledgerIds)
             sb.append(item).append(' ');
 
-        try {
-            try {
-                zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1);
-            } catch (NoNodeException e) {
-                log.info("Creating '{}' Content='{}'", prefix + ledgerName, sb.toString());
-                zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
+        zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1, new StatCallback() {
+            public void processResult(int rc, String path, Object zkCtx, Stat stat) {
+                MetaStoreException status = null;
+                if (rc != KeeperException.Code.OK.intValue()) {
+                    status = new MetaStoreException(KeeperException.create(KeeperException.Code.get(rc)));
+                }
+
+                callback.updateLedgersIdsComplete(status);
             }
-        } catch (Exception e) {
-            throw new MetaStoreException(e);
-        }
+        }, null);
     }
 
     /*

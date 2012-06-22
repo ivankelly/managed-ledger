@@ -44,6 +44,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +56,8 @@ import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCallback, ReadCallback {
+public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCallback, ReadCallback,
+        UpdateLedgersIdsCallback {
 
     private final static long MegaByte = 1024 * 1024;
 
@@ -389,37 +391,48 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             currentLedgerEntries = 0;
             currentLedgerSize = 0;
 
-            // TODO: (Matteo) update the meta store async
-            try {
-                store.updateLedgersIds(name, ledgers.values());
-                log.debug("Updated meta store");
-            } catch (MetaStoreException e) {
-                log.warn("Error updating meta data with the new list of ledgers");
-                while (!pendingAddEntries.isEmpty()) {
-                    pendingAddEntries.poll().failed(e);
-                }
+            store.asyncUpdateLedgerIds(name, ledgers.values(), this, null);
+        }
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback
+     * #updateLedgersIdsComplete
+     * (org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException)
+     */
+    @Override
+    public synchronized void updateLedgersIdsComplete(MetaStoreException status) {
+        if (status != null) {
+            log.warn("Error updating meta data with the new list of ledgers");
+            while (!pendingAddEntries.isEmpty()) {
+                pendingAddEntries.poll().failed(status);
             }
 
-            state = State.LedgerOpened;
+            return;
+        }
 
-            // Process all the pending addEntry requests
-            while (!pendingAddEntries.isEmpty()) {
-                OpAddEntry op = pendingAddEntries.poll();
+        state = State.LedgerOpened;
 
-                op.setLedger(lh);
-                ++currentLedgerEntries;
-                currentLedgerSize += op.data.length;
+        // Process all the pending addEntry requests
+        while (!pendingAddEntries.isEmpty()) {
+            OpAddEntry op = pendingAddEntries.poll();
 
-                if (currentLedgerIsFull()) {
-                    state = State.ClosingLedger;
-                    op.setCloseWhenDone(true);
-                    op.initiate();
-                    log.debug("[{}] Stop writing into ledger {} queue={}",
-                            va(name, currentLedger.getId(), pendingAddEntries.size()));
-                    break;
-                } else {
-                    op.initiate();
-                }
+            op.setLedger(currentLedger);
+            ++currentLedgerEntries;
+            currentLedgerSize += op.data.length;
+
+            if (currentLedgerIsFull()) {
+                state = State.ClosingLedger;
+                op.setCloseWhenDone(true);
+                op.initiate();
+                log.debug("[{}] Stop writing into ledger {} queue={}",
+                        va(name, currentLedger.getId(), pendingAddEntries.size()));
+                break;
+            } else {
+                op.initiate();
             }
         }
     }
