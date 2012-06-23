@@ -27,12 +27,6 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
-import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteLedgerCallback;
@@ -40,7 +34,13 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenCursorCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl;
+import org.apache.bookkeeper.mledger.Entry;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
+import org.apache.bookkeeper.mledger.ManagedLedgerException.ManagedLedgerFencedException;
+import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.apache.zookeeper.CreateMode;
@@ -796,4 +796,40 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
 
         ledger.close();
     }
+
+    @Test
+    public void fenceManagedLedger() throws Exception {
+        ManagedLedgerFactory factory1 = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger1 = factory1.open("my_test_ledger");
+        ManagedCursor cursor1 = ledger1.openCursor("c1");
+        ledger1.addEntry("entry-1".getBytes(Encoding));
+
+        ManagedLedgerFactory factory2 = new ManagedLedgerFactoryImpl(bkc, bkc.getZkHandle());
+        ManagedLedger ledger2 = factory2.open("my_test_ledger");
+        ManagedCursor cursor2 = ledger2.openCursor("c1");
+
+        // At this point ledger1 must have been fenced
+        try {
+            ledger1.addEntry("entry-1".getBytes(Encoding));
+            fail("Expecting exception");
+        } catch (ManagedLedgerFencedException e) {
+        }
+
+        try {
+            cursor1.readEntries(10);
+            fail("Expecting exception");
+        } catch (ManagedLedgerFencedException e) {
+        }
+
+        try {
+            ledger1.openCursor("new cursor");
+            fail("Expecting exception");
+        } catch (ManagedLedgerFencedException e) {
+        }
+
+        ledger2.addEntry("entry-2".getBytes(Encoding));
+
+        assertEquals(cursor2.getNumberOfEntries(), 2);
+    }
+
 }

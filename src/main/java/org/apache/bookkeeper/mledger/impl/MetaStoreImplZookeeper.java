@@ -17,15 +17,21 @@ import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 
 import java.nio.charset.Charset;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
+import org.apache.bookkeeper.mledger.ManagedLedgerException.BadVersionException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
+import org.apache.zookeeper.AsyncCallback.DataCallback;
+import org.apache.zookeeper.AsyncCallback.StatCallback;
 import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +48,14 @@ public class MetaStoreImplZookeeper implements MetaStore {
 
     private final ZooKeeper zk;
 
+    private static class ZKVersion implements Version {
+        int version;
+
+        ZKVersion(int version) {
+            this.version = version;
+        }
+    }
+
     public MetaStoreImplZookeeper(ZooKeeper zk) throws Exception {
         this.zk = zk;
 
@@ -57,26 +71,62 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * .lang.String)
      */
     @Override
-    public List<LedgerStat> getLedgerIds(String ledgerName) throws MetaStoreException {
-        byte[] data;
+    public Pair<Version, List<LedgerStat>> getLedgerIds(final String ledgerName) throws MetaStoreException {
+        final CountDownLatch counter = new CountDownLatch(1);
+
+        class Result {
+            Exception status;
+            int version;
+            byte[] data;
+        }
+        final Result result = new Result();
+
+        // Try to get the content or create an empty node
+        zk.getData(prefix + ledgerName, false, new DataCallback() {
+            public void processResult(int rc, String path, Object ctx, final byte[] readData, Stat stat) {
+                if (rc == KeeperException.Code.OK.intValue()) {
+                    result.version = stat.getVersion();
+                    result.data = readData;
+                } else if (rc == KeeperException.Code.NONODE.intValue()) {
+                    log.info("Creating '{}'", prefix + ledgerName);
+
+                    try {
+                        zk.create(prefix + ledgerName, new byte[0], Acl, CreateMode.PERSISTENT);
+                        result.data = new byte[0];
+                        result.version = 0;
+                    } catch (Exception ce) {
+                        result.status = ce;
+                    }
+                } else {
+                    result.status = KeeperException.create(KeeperException.Code.get(rc));
+                }
+
+                counter.countDown();
+            }
+        }, null);
+
         try {
-            data = zk.getData(prefix + ledgerName, false, null);
-        } catch (NoNodeException e) {
-            return Lists.newArrayList();
-        } catch (Exception e) {
+            counter.await();
+        } catch (InterruptedException e) {
             throw new MetaStoreException(e);
         }
 
-        if (data.length == 0)
-            return Lists.newArrayList();
+        if (result.status != null) {
+            throw new MetaStoreException(result.status);
+        }
 
-        String content = new String(data, Encoding);
         List<LedgerStat> ids = Lists.newArrayList();
+
+        if (result.data.length == 0)
+            return new Pair<Version, List<LedgerStat>>(new ZKVersion(result.version), ids);
+
+        String content = new String(result.data, Encoding);
+
         for (String ledgerData : content.split(" ")) {
             ids.add(LedgerStat.parseData(ledgerData));
         }
 
-        return ids;
+        return new Pair<Version, List<LedgerStat>>(new ZKVersion(result.version), ids);
     }
 
     /*
@@ -86,21 +136,71 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * (java.lang.String, java.lang.Iterable)
      */
     @Override
-    public void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws MetaStoreException {
+    public Version updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds, Version version)
+            throws MetaStoreException {
+        final CountDownLatch counter = new CountDownLatch(1);
+
+        class Result {
+            MetaStoreException status;
+            Version version;
+        }
+        final Result result = new Result();
+
+        asyncUpdateLedgerIds(ledgerName, ledgerIds, version, new UpdateLedgersIdsCallback() {
+            public void updateLedgersIdsComplete(MetaStoreException status, Version version) {
+                result.status = status;
+                result.version = version;
+                counter.countDown();
+            }
+        }, null);
+
+        try {
+            counter.await();
+        } catch (InterruptedException e) {
+            throw new MetaStoreException(e);
+        }
+
+        if (result.status != null) {
+            throw result.status;
+        }
+
+        return result.version;
+    }
+
+    /*
+     * (non-Javadoc)
+     * 
+     * @see
+     * org.apache.bookkeeper.mledger.impl.MetaStore#asyncUpdateLedgerIds(java
+     * .lang.String, java.lang.Iterable,
+     * org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback,
+     * java.lang.Object)
+     */
+    @Override
+    public void asyncUpdateLedgerIds(String ledgerName, Iterable<LedgerStat> ledgerIds, Version version,
+            final UpdateLedgersIdsCallback callback, final Object ctx) {
         StringBuilder sb = new StringBuilder();
         for (LedgerStat item : ledgerIds)
             sb.append(item).append(' ');
 
-        try {
-            try {
-                zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), -1);
-            } catch (NoNodeException e) {
-                log.info("Creating '{}' Content='{}'", prefix + ledgerName, sb.toString());
-                zk.create(prefix + ledgerName, sb.toString().getBytes(Encoding), Acl, CreateMode.PERSISTENT);
+        ZKVersion zkVersion = (ZKVersion) version;
+        log.debug("Updating {} version={} with content={}", va(prefix + ledgerName, zkVersion.version, sb));
+
+        zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), zkVersion.version, new StatCallback() {
+            public void processResult(int rc, String path, Object zkCtx, Stat stat) {
+                MetaStoreException status = null;
+                if (rc == KeeperException.Code.BADVERSION.intValue()) {
+                    // Content has been modified on ZK since our last read
+                    status = new BadVersionException(KeeperException.create(KeeperException.Code.get(rc)));
+                    callback.updateLedgersIdsComplete(status, null);
+                } else if (rc != KeeperException.Code.OK.intValue()) {
+                    status = new MetaStoreException(KeeperException.create(KeeperException.Code.get(rc)));
+                    callback.updateLedgersIdsComplete(status, null);
+                } else {
+                    callback.updateLedgersIdsComplete(null, new ZKVersion(stat.getVersion()));
+                }
             }
-        } catch (Exception e) {
-            throw new MetaStoreException(e);
-        }
+        }, null);
     }
 
     /*

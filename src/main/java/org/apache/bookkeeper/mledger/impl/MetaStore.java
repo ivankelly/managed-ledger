@@ -19,22 +19,28 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 
-
 /**
  * Interface that describes the operations that the ManagedLedger need to do on
  * the metadata store.
  */
 public interface MetaStore {
 
+    public static interface Version {
+    }
+
+    public static interface UpdateLedgersIdsCallback {
+        void updateLedgersIdsComplete(MetaStoreException status, Version version);
+    }
+
     /**
      * Get the list of ledgers used by the ManagedLedger
      * 
      * @param ledgerName
      *            the name of the ManagedLedger
-     * @return a list of LedgerStats
+     * @return a version object and a list of LedgerStats
      * @throws MetaStoreException
      */
-    List<LedgerStat> getLedgerIds(String ledgerName) throws MetaStoreException;
+    Pair<Version, List<LedgerStat>> getLedgerIds(String ledgerName) throws MetaStoreException;
 
     /**
      * Update the list of LedgerStats associated with a ManagedLedger
@@ -43,9 +49,29 @@ public interface MetaStore {
      *            the name of the ManagedLedger
      * @param ledgerIds
      *            a sequence of LedgerStats
+     * @param version
+     *            version object associated with current state
      * @throws MetaStoreException
      */
-    void updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds) throws MetaStoreException;
+    Version updateLedgersIds(String ledgerName, Iterable<LedgerStat> ledgerIds, Version version)
+            throws MetaStoreException;
+
+    /**
+     * 
+     * @param ledgerName
+     *            the name of the ManagedLedger
+     * 
+     * @param ledgerIds
+     *            a sequence of LedgerStats
+     * @param version
+     *            version object associated with current state
+     * @param callback
+     *            callback object
+     * @param ctx
+     *            opaque context object
+     */
+    void asyncUpdateLedgerIds(String ledgerName, Iterable<LedgerStat> ledgerIds, Version version,
+            UpdateLedgersIdsCallback callback, Object ctx);
 
     /**
      * Get the list of consumer registered on a ManagedLedger.

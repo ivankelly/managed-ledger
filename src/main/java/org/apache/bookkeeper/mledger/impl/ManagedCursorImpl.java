@@ -36,7 +36,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Objects;
-import com.google.common.collect.Lists;
 
 /**
  */
@@ -66,29 +65,32 @@ class ManagedCursorImpl implements ManagedCursor {
      * @see org.apache.bookkeeper.mledger.ManagedCursor#readEntries(int)
      */
     @Override
-    @SuppressWarnings("unchecked")
     public List<Entry> readEntries(int numberOfEntriesToRead) throws InterruptedException, ManagedLedgerException {
         checkArgument(numberOfEntriesToRead > 0);
 
         final CountDownLatch counter = new CountDownLatch(1);
-        final List<Object> results = Lists.newArrayList();
+        class Result {
+            ManagedLedgerException status;
+            List<Entry> entries;
+        }
+
+        final Result result = new Result();
 
         asyncReadEntries(numberOfEntriesToRead, new ReadEntriesCallback() {
             public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
-                results.add(status);
-                results.add(entries);
+                // TODO: Remove casting
+                result.status = (ManagedLedgerException) status;
+                result.entries = entries;
                 counter.countDown();
             }
         }, null);
 
         counter.await();
 
-        ManagedLedgerException status = (ManagedLedgerException) results.get(0);
-        List<Entry> entries = (List<Entry>) results.get(1);
-        if (status != null)
-            throw status;
+        if (result.status != null)
+            throw result.status;
 
-        return entries;
+        return result.entries;
     }
 
     /*
