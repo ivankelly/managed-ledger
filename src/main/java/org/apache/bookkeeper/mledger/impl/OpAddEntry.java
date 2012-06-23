@@ -22,6 +22,7 @@ import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerHandle;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.ManagedLedgerException.ManagedLedgerFencedException;
 import org.apache.bookkeeper.mledger.Position;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,6 +84,10 @@ class OpAddEntry implements AddCallback, CloseCallback {
             } else {
                 callback.addComplete(null, new Position(lh.getId(), entryId), ctx);
             }
+        } else if (rc == BKException.Code.LedgerFencedException) {
+            ManagedLedgerException status = new ManagedLedgerFencedException(BKException.create(rc));
+            ml.setFenced();
+            callback.addComplete(status, null, ctx);
         } else {
             ManagedLedgerException status = new ManagedLedgerException(BKException.create(rc));
             callback.addComplete(status, null, ctx);

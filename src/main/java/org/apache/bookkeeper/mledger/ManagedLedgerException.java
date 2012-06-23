@@ -34,4 +34,14 @@ public class ManagedLedgerException extends Exception {
             super(e);
         }
     }
+
+    public static class ManagedLedgerFencedException extends ManagedLedgerException {
+        public ManagedLedgerFencedException() {
+            super(new Exception("Attempted to use a fenced managed ledger"));
+        }
+
+        public ManagedLedgerFencedException(Exception e) {
+            super(e);
+        }
+    }
 }

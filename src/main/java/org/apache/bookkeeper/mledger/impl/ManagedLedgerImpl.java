@@ -42,6 +42,7 @@ import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.ManagedLedgerException.ManagedLedgerFencedException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback;
@@ -82,7 +83,16 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     private long currentLedgerSize = 0;
 
     enum State {
-        None, LedgerOpened, ClosingLedger, ClosedLedger, CreatingLedger,
+        None, // Uninitialized
+        LedgerOpened, // A ledger is ready to write into
+        ClosingLedger, // Closing current ledger
+        ClosedLedger, // Current ledger has been closed and there's no pending
+                      // operation
+        CreatingLedger, // Creating a new ledger
+        Fenced, // A managed ledger is fenced when there is some concurrent
+                // access from a different session/machine. In this state the
+                // managed ledger will throw exception for all operations, since
+                // the new instance will take over
     };
 
     private State state;
@@ -142,9 +152,9 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             if (ledgers.size() > 0) {
                 long id = ledgers.lastKey();
                 LedgerHandle handle = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
-                ledgers.put(id, new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
-
                 handle.close();
+
+                ledgers.put(id, new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
             }
         } catch (BKException e) {
             throw new ManagedLedgerException(e);
@@ -216,6 +226,11 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     public synchronized void asyncAddEntry(final byte[] data, final AddEntryCallback callback, final Object ctx) {
         checkArgument(state != State.None);
         log.debug("[{}] asyncAddEntry size={} state={}", va(name, data.length, state));
+        if (state == State.Fenced) {
+            callback.addComplete(new ManagedLedgerFencedException(), null, ctx);
+            return;
+        }
+
         OpAddEntry addOperation = new OpAddEntry(this, data, callback, ctx);
 
         if (state == State.ClosingLedger || state == State.CreatingLedger) {
@@ -258,6 +273,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      */
     @Override
     public synchronized ManagedCursor openCursor(String cursorName) throws InterruptedException, ManagedLedgerException {
+        checkFenced();
+
         ManagedCursor cursor = cursors.get(cursorName);
 
         if (cursor == null) {
@@ -327,6 +344,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      */
     @Override
     public synchronized void close() throws InterruptedException, ManagedLedgerException {
+        checkFenced();
+
         for (LedgerHandle ledger : ledgerCache.asMap().values()) {
             log.debug("Closing ledger: {}", ledger.getId());
             try {
@@ -465,6 +484,11 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     }
 
     protected synchronized void asyncReadEntries(OpReadEntry opReadEntry) {
+        if (state == State.Fenced) {
+            opReadEntry.failed(new ManagedLedgerFencedException());
+            return;
+        }
+
         LedgerHandle ledger = null;
 
         if (opReadEntry.readPosition.getLedgerId() == -1) {
@@ -625,6 +649,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
     protected synchronized void updateCursor(ManagedCursorImpl cursor, Position newPosition)
             throws InterruptedException, ManagedLedgerException {
+        checkFenced();
         // First update the metadata store, so that if we don't succeed we have
         // not changed any other state
         store.updateConsumer(name, cursor.getName(), newPosition);
@@ -698,6 +723,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         close();
 
         synchronized (this) {
+            checkFenced();
+
             try {
                 for (LedgerStat ls : ledgers.values()) {
                     log.debug("[{}] Deleting ledger {}", name, ls);
@@ -797,6 +824,22 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
     protected Executor getExecutor() {
         return executor;
+    }
+
+    /**
+     * Throws an exception if the managed ledger has been previously fenced
+     * 
+     * @throws ManagedLedgerException
+     */
+    private void checkFenced() throws ManagedLedgerException {
+        if (state == State.Fenced) {
+            log.error("[{}] Attempted to use a fenced managed ledger", name);
+            throw new ManagedLedgerFencedException(new Exception("Attempted to use a fenced managed ledger"));
+        }
+    }
+
+    protected synchronized void setFenced() {
+        state = State.Fenced;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ManagedLedgerImpl.class);
