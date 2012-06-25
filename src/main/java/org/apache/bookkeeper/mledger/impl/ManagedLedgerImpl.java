@@ -164,7 +164,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
         // Create a new ledger to start writing
         try {
-            currentLedger = bookKeeper.createLedger(config.getDigestType(), config.getPassword());
+            currentLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
+                    config.getDigestType(), config.getPassword());
             state = State.LedgerOpened;
             ledgers.put(currentLedger.getId(), new LedgerStat(currentLedger.getId(), 0, 0));
         } catch (BKException e) {
