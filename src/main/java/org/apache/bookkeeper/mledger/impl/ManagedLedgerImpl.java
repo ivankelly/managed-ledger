@@ -164,7 +164,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
         // Create a new ledger to start writing
         try {
-            currentLedger = bookKeeper.createLedger(config.getDigestType(), config.getPassword());
+            currentLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
+                    config.getDigestType(), config.getPassword());
             state = State.LedgerOpened;
             ledgers.put(currentLedger.getId(), new LedgerStat(currentLedger.getId(), 0, 0));
         } catch (BKException e) {
@@ -201,25 +202,27 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         final CountDownLatch counter = new CountDownLatch(1);
         // Result list will contain the status exception and the resulting
         // position
-        final List<Object> results = Lists.newArrayList();
+        class Result {
+            ManagedLedgerException status;
+            Position position;
+        }
+        final Result result = new Result();
 
         asyncAddEntry(data, new AddEntryCallback() {
-            public void addComplete(Throwable status, Position position, Object ctx) {
-                results.add(status);
-                results.add(position);
+            public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
+                result.status = status;
+                result.position = position;
                 counter.countDown();
             }
         }, null);
 
         counter.await();
-        ManagedLedgerException status = (ManagedLedgerException) results.get(0);
-        Position position = (Position) results.get(1);
-        if (status != null) {
-            log.error("Error adding entry", status);
-            throw status;
+        if (result.status != null) {
+            log.error("Error adding entry", result.status);
+            throw result.status;
         }
 
-        return position;
+        return result.position;
     }
 
     @Override
@@ -302,14 +305,17 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     public void asyncOpenCursor(final String name, final OpenCursorCallback callback, final Object ctx) {
         executor.execute(new Runnable() {
             public void run() {
-                Exception error = null;
+                ManagedLedgerException error = null;
                 ManagedCursor cursor = null;
 
                 try {
                     cursor = openCursor(name);
-                } catch (Exception e) {
+                } catch (ManagedLedgerException e) {
                     log.warn("Got exception when adding entry: {}", e);
                     error = e;
+                } catch (InterruptedException e) {
+                    log.warn("Got exception when adding entry: {}", e);
+                    error = new ManagedLedgerException(e);
                 }
 
                 callback.openCursorComplete(error, cursor, ctx);
@@ -371,13 +377,13 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     public void asyncClose(final CloseCallback callback, final Object ctx) {
         executor.execute(new Runnable() {
             public void run() {
-                Exception error = null;
+                ManagedLedgerException error = null;
 
                 try {
                     close();
                 } catch (Exception e) {
                     log.warn("[{}] Got exception when closin managed ledger: {}", name, e);
-                    error = e;
+                    error = new ManagedLedgerException(e);
                 }
 
                 callback.closeComplete(error, ctx);
@@ -402,7 +408,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         if (rc != BKException.Code.OK) {
             state = State.ClosedLedger;
             log.error("[{}] Error creating ledger rc={} {}", va(name, rc, BKException.getMessage(rc)));
-            BKException status = BKException.create(rc);
+            ManagedLedgerException status = new ManagedLedgerException(BKException.create(rc));
 
             // Empty the list of pending requests and make all of them fail
             while (!pendingAddEntries.isEmpty()) {
@@ -618,11 +624,11 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
     protected synchronized boolean hasMoreEntries(Position position) {
         if (position.getLedgerId() == currentLedger.getId()) {
-            // If we are reading from the last ledger ensure, use the
+            // If we are reading from the last ledger, use the
             // LedgerHandle metadata
             return position.getEntryId() <= currentLedger.getLastAddConfirmed();
         } else if (currentLedger.getLastAddConfirmed() >= 0) {
-            // We have entries in the last ledger and we are reading in an
+            // We have entries in the current ledger and we are reading from an
             // older ledger
             return true;
         } else {
@@ -653,10 +659,13 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         // First update the metadata store, so that if we don't succeed we have
         // not changed any other state
         store.updateConsumer(name, cursor.getName(), newPosition);
-        cursor.setAcknowledgedPosition(newPosition);
+        Position oldPosition = cursor.setAcknowledgedPosition(newPosition);
         cursors.cursorUpdated(cursor);
 
-        trimConsumedLedgersInBackground();
+        if (oldPosition.getLedgerId() != newPosition.getLedgerId()) {
+            // Only trigger a trimming when switching to the next ledger
+            trimConsumedLedgersInBackground();
+        }
     }
 
     protected void trimConsumedLedgersInBackground() {
@@ -693,6 +702,10 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
             try {
                 bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
+                ledgers.remove(ledgerToDelete.getLedgerId());
+                numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
+                totalSize.addAndGet(-ledgerToDelete.getSize());
+
             } catch (BKNoSuchLedgerExistsException e) {
                 log.warn("[{}] Ledger was already deleted {}", name, ledgerToDelete.getLedgerId());
             } catch (Exception e) {
@@ -702,15 +715,10 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
             // Update metadata
             try {
-                store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
+                ledgersVersion = store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
             } catch (MetaStoreException e) {
                 log.error("[{}] Failed to update the list of ledgers after trimming", name, e);
-                break;
             }
-
-            ledgers.remove(ledgerToDelete.getLedgerId());
-            numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
-            totalSize.addAndGet(-ledgerToDelete.getSize());
         }
     }
 
@@ -751,8 +759,9 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         }
 
         // Last add the entries in the current ledger
-        if (state != State.ClosedLedger)
+        if (state != State.ClosedLedger) {
             count += currentLedger.getLastAddConfirmed() + 1;
+        }
 
         return count;
     }
@@ -834,7 +843,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     private void checkFenced() throws ManagedLedgerException {
         if (state == State.Fenced) {
             log.error("[{}] Attempted to use a fenced managed ledger", name);
-            throw new ManagedLedgerFencedException(new Exception("Attempted to use a fenced managed ledger"));
+            throw new ManagedLedgerFencedException();
         }
     }
 

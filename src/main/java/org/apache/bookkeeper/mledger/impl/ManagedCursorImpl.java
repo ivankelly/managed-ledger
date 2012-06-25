@@ -77,9 +77,8 @@ class ManagedCursorImpl implements ManagedCursor {
         final Result result = new Result();
 
         asyncReadEntries(numberOfEntriesToRead, new ReadEntriesCallback() {
-            public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
-                // TODO: Remove casting
-                result.status = (ManagedLedgerException) status;
+            public void readEntriesComplete(ManagedLedgerException status, List<Entry> entries, Object ctx) {
+                result.status = status;
                 result.entries = entries;
                 counter.countDown();
             }
@@ -141,8 +140,14 @@ class ManagedCursorImpl implements ManagedCursor {
         ledger.updateCursor(this, position);
     }
 
-    protected void setAcknowledgedPosition(Position newPosition) {
-        acknowledgedPosition.set(newPosition);
+    /**
+     * 
+     * @param newPosition
+     *            the new acknowledged position
+     * @return the previous acknowledged position
+     */
+    protected Position setAcknowledgedPosition(Position newPosition) {
+        Position oldPosition = acknowledgedPosition.getAndSet(newPosition);
 
         Position currentRead = readPosition.get();
         if (newPosition.compareTo(currentRead) >= 0) {
@@ -152,6 +157,8 @@ class ManagedCursorImpl implements ManagedCursor {
             readPosition.compareAndSet(currentRead, new Position(newPosition.getLedgerId(),
                     newPosition.getEntryId() + 1));
         }
+
+        return oldPosition;
     }
 
     /*
@@ -166,13 +173,13 @@ class ManagedCursorImpl implements ManagedCursor {
     public void asyncMarkDelete(final Position position, final MarkDeleteCallback callback, final Object ctx) {
         ledger.getExecutor().execute(new Runnable() {
             public void run() {
-                Exception error = null;
+                ManagedLedgerException error = null;
 
                 try {
                     markDelete(position);
                 } catch (Exception e) {
                     log.warn("[{}] Got exception when mark deleting entry: {} {}", va(ledger.getName(), name, e));
-                    error = e;
+                    error = new ManagedLedgerException(e);
                 }
 
                 callback.markDeleteComplete(error, ctx);

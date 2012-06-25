@@ -157,7 +157,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
                     callback.openLedgerComplete(null, ledger, ctx);
                 } catch (Exception e) {
                     log.warn("Got exception when adding entry: {}", e);
-                    callback.openLedgerComplete(e, null, ctx);
+                    callback.openLedgerComplete(new ManagedLedgerException(e), null, ctx);
                 }
             }
         });
@@ -193,7 +193,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
                     callback.deleteLedgerComplete(null, ctx);
                 } catch (Exception e) {
                     log.warn("Got exception when deleting MangedLedger: {}", e);
-                    callback.deleteLedgerComplete(e, ctx);
+                    callback.deleteLedgerComplete(new ManagedLedgerException(e), ctx);
                 }
             }
         });
