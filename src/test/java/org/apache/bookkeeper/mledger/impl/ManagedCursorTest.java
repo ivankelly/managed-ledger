@@ -23,15 +23,15 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 
+import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.AsyncCallbacks.MarkDeleteCallback;
-import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntriesCallback;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,7 +95,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
         cursor.asyncReadEntries(100, new ReadEntriesCallback() {
-            public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
+            public void readEntriesComplete(ManagedLedgerException status, List<Entry> entries, Object ctx) {
                 assertNull(ctx);
                 assertNull(status);
                 assertEquals(entries.size(), 1);
@@ -124,7 +124,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         stopBKCluster();
 
         cursor.asyncReadEntries(100, new ReadEntriesCallback() {
-            public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
+            public void readEntriesComplete(ManagedLedgerException status, List<Entry> entries, Object ctx) {
                 assertNull(ctx);
                 assertNotNull(status);
                 counter.countDown();
@@ -149,7 +149,7 @@ public class ManagedCursorTest extends BookKeeperClusterTestCase {
         assertEquals(entries.size(), 1);
 
         cursor.asyncMarkDelete(entries.get(0).getPosition(), new MarkDeleteCallback() {
-            public void markDeleteComplete(Throwable status, Object ctx) {
+            public void markDeleteComplete(ManagedLedgerException status, Object ctx) {
                 assertNull(ctx);
                 assertNotNull(status);
 

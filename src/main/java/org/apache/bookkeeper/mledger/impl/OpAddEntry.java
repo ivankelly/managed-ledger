@@ -62,7 +62,7 @@ class OpAddEntry implements AddCallback, CloseCallback {
         ledger.asyncAddEntry(data, this, ctx);
     }
 
-    public void failed(Exception e) {
+    public void failed(ManagedLedgerException e) {
         callback.addComplete(e, null, ctx);
     }
 

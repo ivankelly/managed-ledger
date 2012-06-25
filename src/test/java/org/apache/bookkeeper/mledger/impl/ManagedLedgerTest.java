@@ -38,6 +38,7 @@ import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerConfig;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.ManagedLedgerFencedException;
 import org.apache.bookkeeper.mledger.ManagedLedgerFactory;
 import org.apache.bookkeeper.mledger.Position;
@@ -201,16 +202,16 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
         factory.asyncOpen("my_test_ledger", new ManagedLedgerConfig(), new OpenLedgerCallback() {
-            public void openLedgerComplete(Throwable status, ManagedLedger ledger, Object ctx) {
+            public void openLedgerComplete(ManagedLedgerException status, ManagedLedger ledger, Object ctx) {
                 assertNull(status);
 
                 ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
-                    public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
+                    public void openCursorComplete(ManagedLedgerException status, ManagedCursor cursor, Object ctx) {
                         assertNull(status);
                         ManagedLedger ledger = (ManagedLedger) ctx;
 
                         ledger.asyncAddEntry("test".getBytes(Encoding), new AddEntryCallback() {
-                            public void addComplete(Throwable status, Position position, Object ctx) {
+                            public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
                                 assertNull(status);
 
                                 @SuppressWarnings("unchecked")
@@ -222,7 +223,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                 assertEquals(ledger.getTotalSize(), "test".getBytes(Encoding).length);
 
                                 cursor.asyncReadEntries(2, new ReadEntriesCallback() {
-                                    public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx) {
+                                    public void readEntriesComplete(ManagedLedgerException status, List<Entry> entries, Object ctx) {
                                         assertNull(status);
                                         ManagedCursor cursor = (ManagedCursor) ctx;
 
@@ -231,7 +232,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
                                         assertEquals(new String(entry.getData(), Encoding), "test");
 
                                         cursor.asyncMarkDelete(entry.getPosition(), new MarkDeleteCallback() {
-                                            public void markDeleteComplete(Throwable status, Object ctx) {
+                                            public void markDeleteComplete(ManagedLedgerException status, Object ctx) {
                                                 assertNull(status);
                                                 ManagedCursor cursor = (ManagedCursor) ctx;
 
@@ -425,7 +426,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         // Delete and reopen
         factory.asyncDelete("my_test_ledger", new DeleteLedgerCallback() {
 
-            public void deleteLedgerComplete(Throwable status, Object ctx) {
+            public void deleteLedgerComplete(ManagedLedgerException status, Object ctx) {
                 assertNull(ctx);
                 assertNotNull(status);
 
@@ -450,7 +451,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
         ledger.asyncAddEntry("dummy-entry-1".getBytes(Encoding), new AddEntryCallback() {
-            public void addComplete(Throwable status, Position position, Object ctx) {
+            public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
                 assertNull(ctx);
                 assertNull(status);
 
@@ -479,7 +480,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         for (int i = 0; i < 10; i++) {
             final String content = "dummy-entry-" + i;
             ledger.asyncAddEntry(content.getBytes(Encoding), new AddEntryCallback() {
-                public void addComplete(Throwable status, Position position, Object ctx) {
+                public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
                     assertNotNull(ctx);
                     assertNull(status);
 
@@ -505,7 +506,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         stopZKCluster();
 
         ledger.asyncAddEntry("dummy-entry-1".getBytes(Encoding), new AddEntryCallback() {
-            public void addComplete(Throwable status, Position position, Object ctx) {
+            public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
                 assertNull(ctx);
                 assertNull(position);
                 assertNotNull(status);
@@ -532,7 +533,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
         ledger.asyncClose(new CloseCallback() {
-            public void closeComplete(Throwable status, Object ctx) {
+            public void closeComplete(ManagedLedgerException status, Object ctx) {
                 assertNull(ctx);
                 assertNull(status);
 
@@ -556,7 +557,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         final CyclicBarrier barrier = new CyclicBarrier(2);
 
         ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
-            public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
+            public void openCursorComplete(ManagedLedgerException status, ManagedCursor cursor, Object ctx) {
                 assertNull(ctx);
                 assertNull(status);
                 assertNotNull(cursor);
@@ -584,7 +585,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         stopZKCluster();
 
         ledger.asyncOpenCursor("test-cursor", new OpenCursorCallback() {
-            public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx) {
+            public void openCursorComplete(ManagedLedgerException status, ManagedCursor cursor, Object ctx) {
                 assertNull(ctx);
                 assertNotNull(status);
                 assertNull(cursor);
@@ -706,7 +707,7 @@ public class ManagedLedgerTest extends BookKeeperClusterTestCase {
         for (int i = 0; i < 100; i++) {
             String content = "entry-" + i;
             ledger.asyncAddEntry(content.getBytes(Encoding), new AddEntryCallback() {
-                public void addComplete(Throwable status, Position position, Object ctx) {
+                public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
                     counter.countDown();
                 }
             }, null);

@@ -22,31 +22,31 @@ import java.util.List;
 public interface AsyncCallbacks {
 
     public interface OpenLedgerCallback {
-        public void openLedgerComplete(Throwable status, ManagedLedger ledger, Object ctx);
+        public void openLedgerComplete(ManagedLedgerException status, ManagedLedger ledger, Object ctx);
     }
 
     public interface DeleteLedgerCallback {
-        public void deleteLedgerComplete(Throwable status, Object ctx);
+        public void deleteLedgerComplete(ManagedLedgerException status, Object ctx);
     }
 
     public interface OpenCursorCallback {
-        public void openCursorComplete(Throwable status, ManagedCursor cursor, Object ctx);
+        public void openCursorComplete(ManagedLedgerException status, ManagedCursor cursor, Object ctx);
     }
 
     public interface AddEntryCallback {
-        public void addComplete(Throwable status, Position position, Object ctx);
+        public void addComplete(ManagedLedgerException status, Position position, Object ctx);
     }
 
     public interface CloseCallback {
-        public void closeComplete(Throwable status, Object ctx);
+        public void closeComplete(ManagedLedgerException status, Object ctx);
     }
 
     public interface ReadEntriesCallback {
-        public void readEntriesComplete(Throwable status, List<Entry> entries, Object ctx);
+        public void readEntriesComplete(ManagedLedgerException status, List<Entry> entries, Object ctx);
     }
 
     public interface MarkDeleteCallback {
-        public void markDeleteComplete(Throwable status, Object ctx);
+        public void markDeleteComplete(ManagedLedgerException status, Object ctx);
     }
 
 }

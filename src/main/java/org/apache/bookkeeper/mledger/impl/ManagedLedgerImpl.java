@@ -209,8 +209,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         final Result result = new Result();
 
         asyncAddEntry(data, new AddEntryCallback() {
-            public void addComplete(Throwable status, Position position, Object ctx) {
-                result.status = (ManagedLedgerException) status;
+            public void addComplete(ManagedLedgerException status, Position position, Object ctx) {
+                result.status = status;
                 result.position = position;
                 counter.countDown();
             }
@@ -305,14 +305,17 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     public void asyncOpenCursor(final String name, final OpenCursorCallback callback, final Object ctx) {
         executor.execute(new Runnable() {
             public void run() {
-                Exception error = null;
+                ManagedLedgerException error = null;
                 ManagedCursor cursor = null;
 
                 try {
                     cursor = openCursor(name);
-                } catch (Exception e) {
+                } catch (ManagedLedgerException e) {
                     log.warn("Got exception when adding entry: {}", e);
                     error = e;
+                } catch (InterruptedException e) {
+                    log.warn("Got exception when adding entry: {}", e);
+                    error = new ManagedLedgerException(e);
                 }
 
                 callback.openCursorComplete(error, cursor, ctx);
@@ -374,13 +377,13 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     public void asyncClose(final CloseCallback callback, final Object ctx) {
         executor.execute(new Runnable() {
             public void run() {
-                Exception error = null;
+                ManagedLedgerException error = null;
 
                 try {
                     close();
                 } catch (Exception e) {
                     log.warn("[{}] Got exception when closin managed ledger: {}", name, e);
-                    error = e;
+                    error = new ManagedLedgerException(e);
                 }
 
                 callback.closeComplete(error, ctx);
@@ -405,7 +408,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
         if (rc != BKException.Code.OK) {
             state = State.ClosedLedger;
             log.error("[{}] Error creating ledger rc={} {}", va(name, rc, BKException.getMessage(rc)));
-            BKException status = BKException.create(rc);
+            ManagedLedgerException status = new ManagedLedgerException(BKException.create(rc));
 
             // Empty the list of pending requests and make all of them fail
             while (!pendingAddEntries.isEmpty()) {
