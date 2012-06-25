@@ -188,6 +188,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
 
         zk.setData(prefix + ledgerName, sb.toString().getBytes(Encoding), zkVersion.version, new StatCallback() {
             public void processResult(int rc, String path, Object zkCtx, Stat stat) {
+                log.debug("UpdateLedgersIdsCallback.processResult rc={}", rc);
                 MetaStoreException status = null;
                 if (rc == KeeperException.Code.BADVERSION.intValue()) {
                     // Content has been modified on ZK since our last read
@@ -201,6 +202,8 @@ public class MetaStoreImplZookeeper implements MetaStore {
                 }
             }
         }, null);
+
+        log.debug("asyncUpdateLedgerIds done");
     }
 
     /*

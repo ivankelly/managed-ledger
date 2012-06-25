@@ -141,8 +141,14 @@ class ManagedCursorImpl implements ManagedCursor {
         ledger.updateCursor(this, position);
     }
 
-    protected void setAcknowledgedPosition(Position newPosition) {
-        acknowledgedPosition.set(newPosition);
+    /**
+     * 
+     * @param newPosition
+     *            the new acknowledged position
+     * @return the previous acknowledged position
+     */
+    protected Position setAcknowledgedPosition(Position newPosition) {
+        Position oldPosition = acknowledgedPosition.getAndSet(newPosition);
 
         Position currentRead = readPosition.get();
         if (newPosition.compareTo(currentRead) >= 0) {
@@ -152,6 +158,8 @@ class ManagedCursorImpl implements ManagedCursor {
             readPosition.compareAndSet(currentRead, new Position(newPosition.getLedgerId(),
                     newPosition.getEntryId() + 1));
         }
+
+        return oldPosition;
     }
 
     /*
