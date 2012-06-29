@@ -80,7 +80,7 @@ class OpAddEntry implements AddCallback, CloseCallback {
 
             if (closeWhenDone) {
                 log.info("[{}] Closing ledger {} for being full", ml.getName(), lh.getId());
-                ledger.asyncClose(this, null);
+                ledger.asyncClose(this, ctx);
             } else {
                 callback.addComplete(null, new Position(lh.getId(), entryId), ctx);
             }
