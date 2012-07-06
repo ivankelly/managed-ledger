@@ -70,13 +70,15 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     private final MetaStore store;
 
     private final Cache<Long, LedgerHandle> ledgerCache;
-    protected final TreeMap<Long, LedgerStat> ledgers = Maps.newTreeMap();
+    private final TreeMap<Long, LedgerStat> ledgers = Maps.newTreeMap();
     private Version ledgersVersion;
 
     private final ManagedCursorContainer cursors = new ManagedCursorContainer();
 
     protected AtomicLong numberOfEntries = new AtomicLong(0);
     protected AtomicLong totalSize = new AtomicLong(0);
+
+    private final Object trimmerMutex = new Object();
 
     private LedgerHandle currentLedger;
     private long currentLedgerEntries = 0;
@@ -156,6 +158,8 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
 
                 ledgers.put(id, new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
             }
+        } catch (BKNoSuchLedgerExistsException e) {
+            log.warn("[{}] Ledger not found: {}", name, ledgers.lastKey());
         } catch (BKException e) {
             throw new ManagedLedgerException(e);
         }
@@ -671,7 +675,9 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
     protected void trimConsumedLedgersInBackground() {
         executor.execute(new Runnable() {
             public void run() {
-                internalTrimConsumedLedgers();
+                synchronized (trimmerMutex) {
+                    internalTrimConsumedLedgers();
+                }
             }
         });
     }
@@ -682,44 +688,74 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      * 
      * @throws Exception
      */
-    protected synchronized void internalTrimConsumedLedgers() {
-        long slowestReaderLedgerId = -1;
-        if (cursors.isEmpty() && currentLedger != null) {
-            // At this point the lastLedger will be pointing to the ledger that
-            // has just been closed, therefore the +1 to include lastLedger in
-            // the trimming.
-            slowestReaderLedgerId = currentLedger.getId() + 1;
-        } else {
-            slowestReaderLedgerId = cursors.getSlowestReaderPosition().getLedgerId();
+    protected void internalTrimConsumedLedgers() {
+        // Ensure only one trimming operation is active
+        List<LedgerStat> ledgersToDelete = Lists.newArrayList();
+
+        synchronized (this) {
+            long slowestReaderLedgerId = -1;
+            if (cursors.isEmpty() && currentLedger != null) {
+                // At this point the lastLedger will be pointing to the
+                // ledger that has just been closed, therefore the +1 to
+                // include lastLedger in the trimming.
+                slowestReaderLedgerId = currentLedger.getId() + 1;
+            } else {
+                slowestReaderLedgerId = cursors.getSlowestReaderPosition().getLedgerId();
+            }
+
+            for (LedgerStat ls : ledgers.headMap(slowestReaderLedgerId, false).values()) {
+                ledgersToDelete.add(ls);
+                ledgerCache.invalidate(ls.getLedgerId());
+            }
+
+            if (ledgersToDelete.isEmpty()) {
+                return;
+            }
         }
 
-        while (!ledgers.isEmpty() && ledgers.firstKey() < slowestReaderLedgerId) {
-            // Delete ledger from BookKeeper
-            LedgerStat ledgerToDelete = ledgers.firstEntry().getValue();
+        // Delete the ledgers _without_ holding the lock on 'this'
+        long removedCount = 0;
+        long removedSize = 0;
 
-            ledgerCache.invalidate(ledgerToDelete.getLedgerId());
-
-            log.info("[{}] Removing ledger {}", name, ledgerToDelete.getLedgerId());
+        for (LedgerStat ls : ledgersToDelete) {
+            log.info("[{}] Removing ledger {}", name, ls.getLedgerId());
             try {
-                bookKeeper.deleteLedger(ledgerToDelete.getLedgerId());
-                ledgers.remove(ledgerToDelete.getLedgerId());
-                numberOfEntries.addAndGet(-ledgerToDelete.getEntriesCount());
-                totalSize.addAndGet(-ledgerToDelete.getSize());
-
+                bookKeeper.deleteLedger(ls.getLedgerId());
+                ++removedCount;
+                removedSize += ls.getSize();
             } catch (BKNoSuchLedgerExistsException e) {
-                log.warn("[{}] Ledger was already deleted {}", name, ledgerToDelete.getLedgerId());
+                log.warn("[{}] Ledger was already deleted {}", name, ls.getLedgerId());
             } catch (Exception e) {
-                log.error("[{}] Error deleting ledger {}", name, ledgerToDelete.getLedgerId());
-                break;
-            }
-
-            // Update metadata
-            try {
-                ledgersVersion = store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
-            } catch (MetaStoreException e) {
-                log.error("[{}] Failed to update the list of ledgers after trimming", name, e);
+                log.error("[{}] Error deleting ledger {}", name, ls.getLedgerId());
+                return;
             }
         }
+
+        // Update metadata
+        try {
+            synchronized (this) {
+                numberOfEntries.addAndGet(-removedCount);
+                totalSize.addAndGet(-removedSize);
+                for (LedgerStat ls : ledgersToDelete) {
+                    ledgers.remove(ls.getLedgerId());
+                }
+
+                if (state == State.CreatingLedger) {
+                    // The list of ledgers is being modified asynchronously, we
+                    // cannot update it now. In case of a client crash, this
+                    // will just result in some ledgers to be deleted twice,
+                    // without any side consequences.
+                    log.info("[{}] Skipped updating ledger list for concurrent modification", name);
+                    return;
+                }
+
+                ledgersVersion = store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
+
+            }
+        } catch (MetaStoreException e) {
+            log.error("[{}] Failed to update the list of ledgers after trimming", name, e);
+        }
+
     }
 
     /**
@@ -736,7 +772,11 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             try {
                 for (LedgerStat ls : ledgers.values()) {
                     log.debug("[{}] Deleting ledger {}", name, ls);
-                    bookKeeper.deleteLedger(ls.getLedgerId());
+                    try {
+                        bookKeeper.deleteLedger(ls.getLedgerId());
+                    } catch (BKNoSuchLedgerExistsException e) {
+                        log.warn("[{}] Ledger {} not found when deleting it", name, ls.getLedgerId());
+                    }
                 }
             } catch (BKException e) {
                 throw new ManagedLedgerException(e);
