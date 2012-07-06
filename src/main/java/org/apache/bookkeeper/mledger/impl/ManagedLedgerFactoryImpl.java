@@ -33,13 +33,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Maps;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
     private final MetaStore store;
     private final BookKeeper bookKeeper;
     private final boolean isBookkeeperManaged;
     private final ZooKeeper zookeeper;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService executor = Executors.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat(
+            "bookkeeper-ml-%s").build());
 
     private final ConcurrentMap<String, ManagedLedgerImpl> ledgers = Maps.newConcurrentMap();
 
