@@ -18,13 +18,16 @@ import static org.apache.bookkeeper.mledger.util.VarArgs.va;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.bookkeeper.mledger.ManagedLedgerException.BadVersionException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.apache.zookeeper.AsyncCallback.DataCallback;
+import org.apache.zookeeper.AsyncCallback.StringCallback;
 import org.apache.zookeeper.AsyncCallback.StatCallback;
+import org.apache.zookeeper.AsyncCallback.Children2Callback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
@@ -71,62 +74,37 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * .lang.String)
      */
     @Override
-    public Pair<Version, List<LedgerStat>> getLedgerIds(final String ledgerName) throws MetaStoreException {
-        final CountDownLatch counter = new CountDownLatch(1);
-
-        class Result {
-            Exception status;
-            int version;
-            byte[] data;
-        }
-        final Result result = new Result();
-
+    public void getLedgerIds(final String ledgerName, final MetaStoreCallback<List<LedgerStat>> callback) {
         // Try to get the content or create an empty node
         zk.getData(prefix + ledgerName, false, new DataCallback() {
             public void processResult(int rc, String path, Object ctx, final byte[] readData, Stat stat) {
                 if (rc == KeeperException.Code.OK.intValue()) {
-                    result.version = stat.getVersion();
-                    result.data = readData;
+                    List<LedgerStat> ids = Lists.newArrayList();
+                    String content = new String(readData, Encoding);
+
+                    for (String ledgerData : content.split(" ")) {
+                        ids.add(LedgerStat.parseData(ledgerData));
+                    }
+                    callback.operationComplete(ids, new ZKVersion(stat.getVersion()));
                 } else if (rc == KeeperException.Code.NONODE.intValue()) {
                     log.info("Creating '{}'", prefix + ledgerName);
 
-                    try {
-                        zk.create(prefix + ledgerName, new byte[0], Acl, CreateMode.PERSISTENT);
-                        result.data = new byte[0];
-                        result.version = 0;
-                    } catch (Exception ce) {
-                        result.status = ce;
-                    }
+                    StringCallback createcb = new StringCallback() {
+                            public void processResult(int rc, String path, Object ctx, String name) {
+                                if (rc == KeeperException.Code.OK.intValue()) {
+                                    List<LedgerStat> ids = Lists.newArrayList();
+                                    callback.operationComplete(ids, new ZKVersion(0));
+                                } else {
+                                    callback.operationFailed(new MetaStoreException(KeeperException.create(rc)));
+                                }
+                            }
+                        };
+                    zk.create(prefix + ledgerName, new byte[0], Acl, CreateMode.PERSISTENT, createcb, null);
                 } else {
-                    result.status = KeeperException.create(KeeperException.Code.get(rc));
+                    callback.operationFailed(new MetaStoreException(KeeperException.create(rc)));
                 }
-
-                counter.countDown();
             }
         }, null);
-
-        try {
-            counter.await();
-        } catch (InterruptedException e) {
-            throw new MetaStoreException(e);
-        }
-
-        if (result.status != null) {
-            throw new MetaStoreException(result.status);
-        }
-
-        List<LedgerStat> ids = Lists.newArrayList();
-
-        if (result.data.length == 0)
-            return new Pair<Version, List<LedgerStat>>(new ZKVersion(result.version), ids);
-
-        String content = new String(result.data, Encoding);
-
-        for (String ledgerData : content.split(" ")) {
-            ids.add(LedgerStat.parseData(ledgerData));
-        }
-
-        return new Pair<Version, List<LedgerStat>>(new ZKVersion(result.version), ids);
     }
 
     /*
@@ -146,13 +124,16 @@ public class MetaStoreImplZookeeper implements MetaStore {
         }
         final Result result = new Result();
 
-        asyncUpdateLedgerIds(ledgerName, ledgerIds, version, new UpdateLedgersIdsCallback() {
-            public void updateLedgersIdsComplete(MetaStoreException status, Version version) {
-                result.status = status;
+        asyncUpdateLedgerIds(ledgerName, ledgerIds, version, new MetaStoreCallback<Void>() {
+            public void operationComplete(Void v, Version version) {
                 result.version = version;
                 counter.countDown();
             }
-        }, null);
+            public void operationFailed(MetaStoreException e) {
+                result.status = e;
+                counter.countDown();
+            }
+        });
 
         try {
             counter.await();
@@ -178,7 +159,7 @@ public class MetaStoreImplZookeeper implements MetaStore {
      */
     @Override
     public void asyncUpdateLedgerIds(String ledgerName, Iterable<LedgerStat> ledgerIds, Version version,
-            final UpdateLedgersIdsCallback callback, final Object ctx) {
+                                     final MetaStoreCallback<Void> callback) {
         StringBuilder sb = new StringBuilder();
         for (LedgerStat item : ledgerIds)
             sb.append(item).append(' ');
@@ -193,12 +174,12 @@ public class MetaStoreImplZookeeper implements MetaStore {
                 if (rc == KeeperException.Code.BADVERSION.intValue()) {
                     // Content has been modified on ZK since our last read
                     status = new BadVersionException(KeeperException.create(KeeperException.Code.get(rc)));
-                    callback.updateLedgersIdsComplete(status, null);
+                    callback.operationFailed(status);
                 } else if (rc != KeeperException.Code.OK.intValue()) {
                     status = new MetaStoreException(KeeperException.create(KeeperException.Code.get(rc)));
-                    callback.updateLedgersIdsComplete(status, null);
+                    callback.operationFailed(status);
                 } else {
-                    callback.updateLedgersIdsComplete(null, new ZKVersion(stat.getVersion()));
+                    callback.operationComplete(null, new ZKVersion(stat.getVersion()));
                 }
             }
         }, null);
@@ -213,22 +194,51 @@ public class MetaStoreImplZookeeper implements MetaStore {
      * .lang.String)
      */
     @Override
-    public List<Pair<String, Position>> getConsumers(String ledgerName) throws MetaStoreException {
-        List<Pair<String, Position>> consumers = Lists.newArrayList();
+    public void getConsumers(final String ledgerName, final MetaStoreCallback<List<Pair<String, Position>>> callback) {
+        final List<Pair<String, Position>> consumers = Lists.newArrayList();
+        final AtomicInteger childCount = new AtomicInteger(0);
 
-        try {
-            for (String name : zk.getChildren(prefix + ledgerName, false)) {
-                byte[] data = zk.getData(prefix + ledgerName + "/" + name, false, null);
-                String content = new String(data, Encoding);
-                log.debug("[{}] Processing consumer '{}' pos={}", va(ledgerName, name, content));
-                consumers.add(Pair.create(name, new Position(content)));
-            }
-        } catch (Exception e) {
-            throw new MetaStoreException(e);
-        }
+        final DataCallback datacb = new DataCallback() {
+                public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
+                    if (rc != KeeperException.Code.OK.intValue()) {
+                        childCount.set(-1);
+                        callback.operationFailed(new MetaStoreException(KeeperException.create(rc)));
+                        return;
+                    }
+                    ZKVersion version = (ZKVersion)ctx;
+                    String content = new String(data, Encoding);
+                    String parts[] = path.split("/");
+                    String name = parts[parts.length-1];
 
-        log.debug("Consumer list: {}", consumers);
-        return consumers;
+                    log.debug("[{}] Processing consumer '{}' pos={}", va(ledgerName, name, content));
+                    synchronized(consumers) {
+                        consumers.add(Pair.create(name, new Position(content)));
+                    }
+                    if (childCount.decrementAndGet() == 0) {
+                        log.debug("Consumer list: {}", consumers);
+                        callback.operationComplete(consumers, version);
+                    }
+                }
+            };
+        zk.getChildren(prefix + ledgerName, false,
+                new Children2Callback() {
+                    public void processResult(int rc, String path, Object ctx, List<String> children, Stat stat) {
+                        if (rc != KeeperException.Code.OK.intValue()) {
+                            callback.operationFailed(new MetaStoreException(KeeperException.create(rc)));
+                            return;
+                        }
+
+                        ZKVersion version = new ZKVersion(stat.getVersion());
+                        if (children.size() == 0) {
+                            callback.operationComplete(consumers, version);
+                        }
+                        childCount.set(children.size());
+                        for (String name : children) {
+                            zk.getData(prefix + ledgerName + "/" + name,
+                                       false, datacb, version);
+                        }
+                    }
+                }, null);
     }
 
     /*

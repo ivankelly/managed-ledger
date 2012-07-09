@@ -32,6 +32,11 @@ public interface MetaStore {
         void updateLedgersIdsComplete(MetaStoreException status, Version version);
     }
 
+    public static interface MetaStoreCallback<T> {
+        void operationComplete(T result, Version version);
+        void operationFailed(MetaStoreException e); 
+    }
+
     /**
      * Get the list of ledgers used by the ManagedLedger
      * 
@@ -40,7 +45,7 @@ public interface MetaStore {
      * @return a version object and a list of LedgerStats
      * @throws MetaStoreException
      */
-    Pair<Version, List<LedgerStat>> getLedgerIds(String ledgerName) throws MetaStoreException;
+    void getLedgerIds(String ledgerName, MetaStoreCallback<List<LedgerStat>> callback);
 
     /**
      * Update the list of LedgerStats associated with a ManagedLedger
@@ -71,7 +76,7 @@ public interface MetaStore {
      *            opaque context object
      */
     void asyncUpdateLedgerIds(String ledgerName, Iterable<LedgerStat> ledgerIds, Version version,
-            UpdateLedgersIdsCallback callback, Object ctx);
+                              MetaStoreCallback<Void> callback);
 
     /**
      * Get the list of consumer registered on a ManagedLedger.
@@ -81,7 +86,7 @@ public interface MetaStore {
      * @return a list of Pair<ConsumerId,Position> for the consumers
      * @throws MetaStoreException
      */
-    List<Pair<String, Position>> getConsumers(String ledgerName) throws MetaStoreException;
+    void getConsumers(String ledgerName, MetaStoreCallback<List<Pair<String, Position>>> callback);
 
     /**
      * Update the persisted position of a consumer

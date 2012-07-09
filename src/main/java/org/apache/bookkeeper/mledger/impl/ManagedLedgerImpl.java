@@ -25,15 +25,18 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.bookkeeper.client.AsyncCallback.CreateCallback;
 import org.apache.bookkeeper.client.AsyncCallback.OpenCallback;
+import org.apache.bookkeeper.client.AsyncCallback;
 import org.apache.bookkeeper.client.AsyncCallback.ReadCallback;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BKException.BKNoSuchLedgerExistsException;
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.ManagedLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.AddEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.CloseCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenCursorCallback;
@@ -45,7 +48,7 @@ import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.ManagedLedgerFencedException;
 import org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException;
 import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.impl.MetaStore.UpdateLedgersIdsCallback;
+import org.apache.bookkeeper.mledger.impl.MetaStore.MetaStoreCallback;
 import org.apache.bookkeeper.mledger.impl.MetaStore.Version;
 import org.apache.bookkeeper.mledger.util.Pair;
 import org.slf4j.Logger;
@@ -58,9 +61,7 @@ import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCallback, ReadCallback,
-        UpdateLedgersIdsCallback {
-
+public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCallback, ReadCallback {
     private final static long MegaByte = 1024 * 1024;
 
     private final BookKeeper bookKeeper;
@@ -139,57 +140,116 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
                 .removalListener(removalListener).build();
     }
 
-    protected synchronized void initialize() throws InterruptedException, ManagedLedgerException {
+    synchronized void initialize(final ManagedLedgerCallback<Void> callback) {
         log.info("Opening managed ledger {}", name);
 
         // Fetch the list of existing ledgers in the managed ledger
-        Pair<Version, List<LedgerStat>> result = store.getLedgerIds(name);
-        ledgersVersion = result.first;
-        for (LedgerStat ls : result.second) {
-            ledgers.put(ls.getLedgerId(), ls);
-        }
+        store.getLedgerIds(name, new MetaStoreCallback<List<LedgerStat>>() {
+                public void operationComplete(List<LedgerStat> result, Version version) {
+                    ledgersVersion = version;
+                    for (LedgerStat ls : result) {
+                        ledgers.put(ls.getLedgerId(), ls);
+                    }
+                    
+                    // Last ledger stat may be zeroed, we must update it
+                    if (ledgers.size() > 0) {
+                        final long id = ledgers.lastKey();
+                        OpenCallback opencb = new OpenCallback() {
+                                public void openComplete(int rc, LedgerHandle lh, Object ctx) {
+                                    if (rc == BKException.Code.OK) {
+                                        ledgers.put(id, new LedgerStat(id, lh.getLastAddConfirmed() + 1, lh.getLength()));
+                                        lh.asyncClose(new AsyncCallback.CloseCallback() {
+                                                public void closeComplete(int rc, LedgerHandle lh, Object ctx) {
+                                                    if (rc == BKException.Code.OK) {
+                                                        initializeBookKeeper(callback);
+                                                    } else {
+                                                        callback.operationFailed(
+                                                                new ManagedLedgerException(BKException.create(rc)));
+                                                    }
+                                                }
+                                            }, null);
+                                    } else if (rc == BKException.Code.NoSuchLedgerExistsException) {
+                                        log.warn("[{}] Ledger not found: {}", name, ledgers.lastKey());
+                                        initializeBookKeeper(callback);
+                                    } else {
+                                        callback.operationFailed(new ManagedLedgerException(BKException.create(rc)));
+                                        return;
+                                    }
+                                }
+                            };
+                        bookKeeper.asyncOpenLedger(id, config.getDigestType(), config.getPassword(),
+                                                   opencb, null);
+                    } else {
+                        initializeBookKeeper(callback);
+                    }
+                }
+                public void operationFailed(MetaStoreException e) {
+                    callback.operationFailed(new ManagedLedgerException(e));
+                }
+            });
+    }
 
-        try {
-            // Last ledger stat may be zeroed, we must update it
-            if (ledgers.size() > 0) {
-                long id = ledgers.lastKey();
-                LedgerHandle handle = bookKeeper.openLedger(id, config.getDigestType(), config.getPassword());
-                handle.close();
+    private void initializeBookKeeper(final ManagedLedgerCallback<Void> callback) {
+        log.debug("[{}] initializing bookkeeper; ledgers {}", name, ledgers);
 
-                ledgers.put(id, new LedgerStat(id, handle.getLastAddConfirmed() + 1, handle.getLength()));
+        final MetaStoreCallback<Void> storeLedgersCb = new MetaStoreCallback<Void>() {
+            public void operationComplete(Void v, Version version) {
+                ledgersVersion = version;
+                initializeCursors(callback);
             }
-        } catch (BKNoSuchLedgerExistsException e) {
-            log.warn("[{}] Ledger not found: {}", name, ledgers.lastKey());
-        } catch (BKException e) {
-            throw new ManagedLedgerException(e);
-        }
 
-        log.debug("[{}] Contains: {}", name, ledgers);
-
+            public void operationFailed(MetaStoreException e) {
+                callback.operationFailed(new ManagedLedgerException(e));
+            }
+        };
         // Create a new ledger to start writing
-        try {
-            currentLedger = bookKeeper.createLedger(config.getEnsembleSize(), config.getQuorumSize(),
-                    config.getDigestType(), config.getPassword());
-            state = State.LedgerOpened;
-            ledgers.put(currentLedger.getId(), new LedgerStat(currentLedger.getId(), 0, 0));
-        } catch (BKException e) {
-            throw new ManagedLedgerException(e);
-        }
+        bookKeeper.asyncCreateLedger(config.getEnsembleSize(), config.getQuorumSize(),
+                config.getDigestType(), config.getPassword(),
+                new CreateCallback() {
+                    public void createComplete(int rc, LedgerHandle lh, Object ctx) {
+                        if (rc == BKException.Code.OK) {
+                            state = State.LedgerOpened;
+                            currentLedger = lh;
+                            ledgers.put(currentLedger.getId(), new LedgerStat(currentLedger.getId(), 0, 0));
+                            // Save it back to ensure all nodes exist
+                            store.asyncUpdateLedgerIds(name, ledgers.values(), ledgersVersion, storeLedgersCb);
+                        } else {
+                            callback.operationFailed(new ManagedLedgerException(BKException.create(rc)));
+                        }
+                    }
+                }, null);
+    }
 
-        // Save it back to ensure all nodes exist
-        ledgersVersion = store.updateLedgersIds(name, ledgers.values(), ledgersVersion);
+    private void initializeCursors(final ManagedLedgerCallback<Void> callback) {
+        log.debug("[{}] initializing cursors", name);
+        store.getConsumers(name, new MetaStoreCallback<List<Pair<String, Position>>>() {
+                public void operationComplete(List<Pair<String, Position>> result, Version v) {
+                    // Load existing cursors
+                    try {
+                        for (Pair<String, Position> pair : result) {
+                            log.debug("[{}] Loading cursor {}", name, pair);
+                            cursors.add(new ManagedCursorImpl(ManagedLedgerImpl.this, pair.first, pair.second));
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        callback.operationFailed(new ManagedLedgerException(e));
+                        return;
+                    } catch (ManagedLedgerException e) {
+                        callback.operationFailed(e);
+                        return;
+                    }
 
-        // Load existing cursors
-        for (Pair<String, Position> pair : store.getConsumers(name)) {
-            log.debug("[{}] Loading cursor {}", name, pair);
-            cursors.add(new ManagedCursorImpl(this, pair.first, pair.second));
-        }
-
-        // Calculate total entries and size
-        for (LedgerStat ls : ledgers.values()) {
-            this.numberOfEntries.addAndGet(ls.getEntriesCount());
-            this.totalSize.addAndGet(ls.getSize());
-        }
+                    // Calculate total entries and size
+                    for (LedgerStat ls : ledgers.values()) {
+                        numberOfEntries.addAndGet(ls.getEntriesCount());
+                        totalSize.addAndGet(ls.getSize());
+                    }
+                    callback.operationComplete(null);
+                }
+                public void operationFailed(MetaStoreException e) {
+                    callback.operationFailed(new ManagedLedgerException(e));
+                }
+            });
     }
 
     @Override
@@ -425,7 +485,19 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
             currentLedgerEntries = 0;
             currentLedgerSize = 0;
 
-            store.asyncUpdateLedgerIds(name, ledgers.values(), ledgersVersion, this, null);
+            MetaStoreCallback<Void> cb = new MetaStoreCallback<Void>() {
+                public void operationComplete(Void v, Version version) {
+                    updateLedgersIdsComplete(version);
+                }
+
+                public void operationFailed(MetaStoreException e) {
+                    log.warn("Error updating meta data with the new list of ledgers");
+                    while (!pendingAddEntries.isEmpty()) {
+                        pendingAddEntries.poll().failed(e);
+                    }
+                }
+            };
+            store.asyncUpdateLedgerIds(name, ledgers.values(), ledgersVersion, cb);
         }
     }
 
@@ -437,17 +509,7 @@ public class ManagedLedgerImpl implements ManagedLedger, CreateCallback, OpenCal
      * #updateLedgersIdsComplete
      * (org.apache.bookkeeper.mledger.ManagedLedgerException.MetaStoreException)
      */
-    @Override
-    public synchronized void updateLedgersIdsComplete(MetaStoreException status, Version version) {
-        if (status != null) {
-            log.warn("Error updating meta data with the new list of ledgers");
-            while (!pendingAddEntries.isEmpty()) {
-                pendingAddEntries.poll().failed(status);
-            }
-
-            return;
-        }
-
+    public synchronized void updateLedgersIdsComplete(Version version) {
         state = State.LedgerOpened;
         ledgersVersion = version;
 

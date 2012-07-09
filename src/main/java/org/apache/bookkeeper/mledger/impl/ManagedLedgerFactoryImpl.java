@@ -20,6 +20,7 @@ import java.util.concurrent.Executors;
 
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
+import org.apache.bookkeeper.mledger.AsyncCallbacks.ManagedLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteLedgerCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.OpenLedgerCallback;
 import org.apache.bookkeeper.mledger.ManagedLedger;
@@ -97,35 +98,27 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * lang.String, org.apache.bookkeeper.mledger.ManagedLedgerConfig)
      */
     @Override
-    public ManagedLedger open(String name, ManagedLedgerConfig config) throws InterruptedException,
-            ManagedLedgerException {
-        ManagedLedgerImpl ledger = ledgers.get(name);
-        if (ledger != null) {
-            log.info("Reusing opened ManagedLedger: {}", name);
-            return ledger;
-        } else {
-            ledger = new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
-            ManagedLedgerImpl oldValue = ledgers.putIfAbsent(name, ledger);
-            if (oldValue != null) {
-                // There has been a concurrent open(), reuse the other instance
-                return oldValue;
-            } else {
-                // Initialize the new ManagedLedger instance
-                try {
-                    ledger.initialize();
-                } catch (ManagedLedgerException e) {
-                    // If initialize fails we need to remove the
-                    // half-initialized managed ledger from the cache
-                    ledgers.remove(name);
-                    throw e;
-                } catch (InterruptedException e) {
-                    ledgers.remove(name);
-                    throw e;
-                }
-
-                return ledger;
-            }
+    public ManagedLedger open(String name, ManagedLedgerConfig config)
+            throws InterruptedException, ManagedLedgerException {
+        class Result {
+            ManagedLedger l = null;
+            ManagedLedgerException e = null;
         }
+        final Result r = new Result();
+        final CountDownLatch latch = new CountDownLatch(1);
+        asyncOpen(name, config, new OpenLedgerCallback() {
+                public void openLedgerComplete(ManagedLedgerException status, ManagedLedger ledger, Object ctx) {
+                    r.e = status;
+                    r.l = ledger;
+                    latch.countDown();
+                }
+            }, null);
+        latch.await();
+
+        if (r.e != null) {
+            throw r.e;
+        }
+        return r.l;
     }
 
     /*
@@ -150,19 +143,38 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
      * java.lang.Object)
      */
     @Override
-    public void asyncOpen(final String name, final ManagedLedgerConfig config, final OpenLedgerCallback callback,
-            final Object ctx) {
-        executor.submit(new Runnable() {
-            public void run() {
-                try {
-                    ManagedLedger ledger = open(name, config);
-                    callback.openLedgerComplete(null, ledger, ctx);
-                } catch (Exception e) {
-                    log.warn("Got exception when adding entry: {}", e);
-                    callback.openLedgerComplete(new ManagedLedgerException(e), null, ctx);
-                }
-            }
-        });
+    public void asyncOpen(final String name, final ManagedLedgerConfig config,
+                          final OpenLedgerCallback callback, final Object ctx) {
+        ManagedLedgerImpl ledger = ledgers.get(name);
+        if (ledger != null) {
+            log.info("Reusing opened ManagedLedger: {}", name);
+            callback.openLedgerComplete(null, ledger, ctx);
+        } else {
+            final ManagedLedgerImpl newledger = new ManagedLedgerImpl(this, bookKeeper, store, config, executor, name);
+            newledger.initialize(new ManagedLedgerCallback<Void>() {
+                    public void operationComplete(Void result) {
+                        ManagedLedgerImpl oldValue = ledgers.putIfAbsent(name, newledger);
+                        if (oldValue != null) {
+                            try {
+                                newledger.close();
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                log.warn("Interruped while closing managed ledger", ie);
+                            } catch (ManagedLedgerException mle) {
+                                callback.openLedgerComplete(mle, null, ctx);
+                                return;
+                            }
+
+                            callback.openLedgerComplete(null, oldValue, ctx);
+                        } else {
+                            callback.openLedgerComplete(null, newledger, ctx);
+                        }
+                    }
+                    public void operationFailed(ManagedLedgerException e) {
+                        callback.openLedgerComplete(e, null, ctx);
+                    }
+                });
+        }
     }
 
     /*
@@ -203,7 +215,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
     protected void close(ManagedLedger ledger) {
         // Remove the ledger from the internal factory cache
-        ledgers.remove(ledger.getName());
+        ledgers.remove(ledger.getName(), ledger);
     }
 
     @Override

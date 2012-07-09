@@ -20,6 +20,10 @@ import java.util.List;
  * 
  */
 public interface AsyncCallbacks {
+    public interface ManagedLedgerCallback<T> {
+        public void operationComplete(T result);
+        public void operationFailed(ManagedLedgerException e);
+    }
 
     public interface OpenLedgerCallback {
         public void openLedgerComplete(ManagedLedgerException status, ManagedLedger ledger, Object ctx);
